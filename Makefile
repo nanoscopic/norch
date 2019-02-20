@@ -1,8 +1,8 @@
-CC = g++
-CFLAGS = -Wall -O2 -Wl,-Bstatic -lnanomsg -Wl,-Bdynamic -DNN_STATIC_LIB
+CC = /usr/local/musl/bin/musl-gcc
+CFLAGS = -g -Wall -O2 -static -Wl,--build-id=sha1 -lnanomsg -L/usr/local/musl/lib -L/usr/local/musl/lib64 -DNN_STATIC_LIB -I/usr/local/musl/include
 #CFLAGS = -Wall -O2 -static -DNN_STATIC_LIB
 # LIB = -lpthread
-LIB = /usr/lib64/libnanomsg.a -lpthread
+LIB = -lpthread -L/usr/local/musl/lib -L/usr/local/musl/lib64 /usr/local/musl/lib64/libnanomsg.a
 #-lpthread -lanl
 HFILES =
 CFILES = nanodist.c

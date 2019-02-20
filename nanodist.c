@@ -9,14 +9,15 @@
 char *decode_err( int err );
 
 int main( const int argc, const char **argv ) {
-    char *socket_address_in = (char *) "ipc:///var/www/html/wcm3/socket/client.ipc";
-    char *socket_address_out = (char *) "ipc:///var/www/html/wcm3/socket/melon.ipc";
-    char *socket_address_out2 = (char *) "ipc:///var/www/html/wcm3/socket/matt.ipc";
-    char *socket_address_out3 = (char *) "ipc:///var/www/html/wcm3/socket/carbon.ipc";
-    char *socket_address_out4 = (char *) "ipc:///var/www/html/wcm3/socket/wcm4.ipc";
+    char *socket_address_in = (char *) "ipc:///home/user/github/nanodist/in.ipc";
+    char *socket_address_out = (char *) "ipc:///home/user/github/nanodist/out1.ipc";
+    char *socket_address_out2 = (char *) "ipc:///home/user/github/nanodist/out2.ipc";
+    char *socket_address_out3 = (char *) "ipc:///home/user/github/nanodist/out3.ipc";
+    char *socket_address_out4 = (char *) "ipc:///home/user/github/nanodist/out4.ipc";
     
     umask(0);
     int socket_in = nn_socket(AF_SP, NN_PULL);
+    
     int bind_res = nn_bind(socket_in, socket_address_in);
     if( bind_res < 0 ) {
         printf("Bind in error\n");
@@ -64,7 +65,7 @@ int main( const int argc, const char **argv ) {
            int err = errno;
            char *errStr = decode_err( err );
            printf( "failed to receive: %s\n",errStr);
-           delete errStr;
+           free( errStr );
            continue;
         }
         
@@ -74,13 +75,13 @@ int main( const int argc, const char **argv ) {
         char *pathpos = strstr( (char *) buf, "path='" );
         if( pathpos ) {
             pathpos += 6;
-            if( !strncmp( pathpos, "/wcm2", 5 ) ) {
+            if( !strncmp( pathpos, "/out2", 5 ) ) {
                 socket_dest = socket_out2;
             }
-            if( !strncmp( pathpos, "/wcm4", 5 ) ) {
+            if( !strncmp( pathpos, "/out3", 5 ) ) {
                 socket_dest = socket_out4;
             }
-            if( !strncmp( pathpos, "/x", 2 ) ) {
+            if( !strncmp( pathpos, "/out4", 2 ) ) {
                 socket_dest = socket_out3;
             }
         }
@@ -90,7 +91,7 @@ int main( const int argc, const char **argv ) {
             int err = errno;
             char *errStr = decode_err( err );
             printf("failed to resend: %s\n",errStr);
-            delete errStr;
+            free( errStr );
             nn_freemsg( buf );
             continue;
         }
@@ -105,7 +106,7 @@ char *decode_err( int err ) {
     if( err == EAGAIN ) { return strdup("EAGAIN"); }
     if( err == EINTR ) { return strdup("EINTR"); }
     if( err == ETIMEDOUT ) { return strdup("ETIMEDOUT"); }
-    buf = new char[100];
+    buf = malloc( 100 );// char[100];
     sprintf(buf,"Err number: %i", err );
     return buf;
 }
