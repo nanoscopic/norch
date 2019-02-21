@@ -1,0 +1,13 @@
+[Unit]
+Description=Norch Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/user/github/norch/working
+ExecStart=/home/user/github/norch/nanodist
+Restart=on-abort
+
+[Install]
+WantedBy=multi-user.target

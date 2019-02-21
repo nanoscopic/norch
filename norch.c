@@ -3,7 +3,7 @@
  * Original License: AGPL
  * Forking MIT with permission to allow usage and derivative work by SUSE LLC
  *
- * Ongoing Copyright - SUSE LLC
+ * Ongoing Copyright (C) SUSE LLC 2019
  */
 #include<nanomsg/nn.h>
 #include<nanomsg/pipeline.h>
