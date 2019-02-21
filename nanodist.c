@@ -1,3 +1,10 @@
+/*
+ * Original Copyright (C) David Helkowski 2017, 2018
+ * Original License: AGPL
+ * Forking MIT with permission to allow usage and derivative work by SUSE LLC
+ *
+ * Ongoing Copyright - SUSE LLC
+ */
 #include<nanomsg/nn.h>
 #include<nanomsg/pipeline.h>
 #include<errno.h>
