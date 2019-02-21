@@ -5,56 +5,97 @@
 #include<stdio.h>
 #include<string.h>
 #include<sys/stat.h>
+#include<xjr-helpers.h>
+#include<xjr-node.h>
 
 char *decode_err( int err );
 
+typedef struct output_s output;
+struct output_s {
+    char *path;
+    int path_len;
+    char *socket_str;
+    int socket_id;
+    output *next;        
+};
+
+output *output__new() {
+    output *self = ( output * ) calloc( 1, sizeof( output ) );
+    return self;
+}
+
 int main( const int argc, const char **argv ) {
-    char *socket_address_in = (char *) "ipc:///home/user/github/nanodist/in.ipc";
-    char *socket_address_out = (char *) "ipc:///home/user/github/nanodist/out1.ipc";
-    char *socket_address_out2 = (char *) "ipc:///home/user/github/nanodist/out2.ipc";
-    char *socket_address_out3 = (char *) "ipc:///home/user/github/nanodist/out3.ipc";
-    char *socket_address_out4 = (char *) "ipc:///home/user/github/nanodist/out4.ipc";
+    char *configFile = "config.xjr";
+    char *buffer;
+    xjr_node *root = parse_file( (xjr_mempool *) 0, configFile, &buffer );
+    if( !root ) {
+        fprintf( stderr, "Could not open config file %s\n", configFile );
+        return 1;
+    }
+    xjr_node *input = xjr_node__get( root, "input", 5 );
+    if( !input ) {
+        fprintf( stderr, "Config does not contain input node\n" );
+        xjr_node__delete( root );
+        return 2;
+    }
     
-    umask(0);
+    xjr_arr *outputs = xjr_node__getarr( root, "output", 6 );
+    if( !outputs ) {
+        fprintf( stderr, "Config does not contain any output node\n" );
+        xjr_node__delete( root );
+        return 3;
+    }
+
+    char *socket_address_in = xjr_node__get_valuez( input, "socket", 6 );
+    if( !socket_address_in ) {
+        fprintf( stderr, "Input node does not have a socket\n" );
+        xjr_node__delete( root );
+        return 4;
+    }
+      
+    output *firstOutput = NULL;
+    output *defaultOutput = NULL;
+    
+    umask( 0 );
+
+    int output_count = outputs->count;
+    int send_timeout = 200;
+    for( int i=0;i<output_count;i++ ) {
+        void *itemV = outputs->items[i];
+        //char type = outputs->types[i];
+        xjr_node *item = (xjr_node *) itemV;
+        
+        output *oldFirst = firstOutput;
+        output *cur = firstOutput = output__new();
+
+        cur->next       = oldFirst;
+        cur->path       = xjr_node__get_valuez( item, "path",   4 );
+        if( cur->path ) {
+            cur->path_len = strlen( cur->path );
+        }
+        cur->socket_str = xjr_node__get_valuez( item, "socket", 6 );
+        if( cur->socket_str ) {
+            int socket_id = nn_socket( AF_SP, NN_PUSH );
+            int bind_res = nn_bind( socket_id, cur->socket_str );
+            nn_setsockopt( socket_id, NN_SOL_SOCKET, NN_SNDTIMEO, &send_timeout, sizeof( send_timeout ) );
+            if( bind_res < 0 ) {
+                fprintf( stderr, "Error binding %s\n", cur->socket_str );
+            }
+            else { // success
+                cur->socket_id = socket_id;
+            }    
+        }
+        xjr_node *defaultFlag = xjr_node__get( item, "default", 7 );
+        if( defaultFlag ) {
+            defaultOutput = cur;
+        }
+    }
+    
     int socket_in = nn_socket(AF_SP, NN_PULL);
     
     int bind_res = nn_bind(socket_in, socket_address_in);
     if( bind_res < 0 ) {
-        printf("Bind in error\n");
-        exit(1);
-    }
-    
-    int send_timeout = 200;
-    
-    int socket_out = nn_socket(AF_SP, NN_PUSH);
-    bind_res = nn_bind(socket_out, socket_address_out);
-    nn_setsockopt( socket_out, NN_SOL_SOCKET, NN_SNDTIMEO, &send_timeout, sizeof(send_timeout) );
-    if( bind_res < 0 ) {
-        printf("Bind out error\n");
-        exit(1);
-    }
-    
-    int socket_out2 = nn_socket(AF_SP, NN_PUSH);
-    bind_res = nn_bind(socket_out2, socket_address_out2);
-    nn_setsockopt( socket_out2, NN_SOL_SOCKET, NN_SNDTIMEO, &send_timeout, sizeof(send_timeout) );
-    if( bind_res < 0 ) {
-        printf("Bind out error\n");
-        exit(1);
-    }
-    
-    int socket_out3 = nn_socket(AF_SP, NN_PUSH);
-    bind_res = nn_bind(socket_out3, socket_address_out3);
-    nn_setsockopt( socket_out3, NN_SOL_SOCKET, NN_SNDTIMEO, &send_timeout, sizeof(send_timeout) );
-    if( bind_res < 0 ) {
-        printf("Bind out error\n");
-        exit(1);
-    }
-    
-    int socket_out4 = nn_socket(AF_SP, NN_PUSH);
-    bind_res = nn_bind(socket_out4, socket_address_out4);
-    nn_setsockopt( socket_out4, NN_SOL_SOCKET, NN_SNDTIMEO, &send_timeout, sizeof(send_timeout) );
-    if( bind_res < 0 ) {
-        printf("Bind out error\n");
+        fprintf( stderr, "Bind to %s error\n", socket_address_in);
         exit(1);
     }
     
@@ -71,18 +112,18 @@ int main( const int argc, const char **argv ) {
         
         printf("Incoming Bytes: %i, Buffer:%s\n\n", bytes, (char *) buf );
         
-        int socket_dest = socket_out;
+        int socket_dest = defaultOutput->socket_id;
         char *pathpos = strstr( (char *) buf, "path='" );
         if( pathpos ) {
             pathpos += 6;
-            if( !strncmp( pathpos, "/out2", 5 ) ) {
-                socket_dest = socket_out2;
-            }
-            if( !strncmp( pathpos, "/out3", 5 ) ) {
-                socket_dest = socket_out4;
-            }
-            if( !strncmp( pathpos, "/out4", 2 ) ) {
-                socket_dest = socket_out3;
+            output *curOutput = firstOutput;
+            for( int j=0;j<output_count;j++ ) {
+                if( !curOutput ) break;
+                if( !strncmp( pathpos, curOutput->path, curOutput->path_len ) ) {
+                    socket_dest = curOutput->socket_id;
+                    break;
+                }
+                curOutput = curOutput->next;
             }
         }
         

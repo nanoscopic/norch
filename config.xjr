@@ -1,0 +1,4 @@
+<input socket='ipc:///home/user/github/nanodist/in.ipc' />
+<output default=1 socket='ipc:///home/user/github/nanodist/out1.ipc' />
+<output path='/path1' socket='ipc:///home/user/github/nanodist/out2.ipc' />
+<output path='/path2' socket='ipc:///home/user/github/nanodist/out3.ipc' />
