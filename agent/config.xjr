@@ -1,0 +1,11 @@
+<!-- How the agent receives messages -->
+<input             socket='tcp://*:8272' />
+
+<!-- Where to subscribe to broadcast messages -->
+<broadcast         socket='tcp://127.0.0.1:8273' />
+
+<!-- Where to send requests for information -->
+<director_requests socket='tcp://127.0.0.1:8275' />
+
+<!-- Where to send results of actions -->
+<director_results  socket='tcp://127.0.0.1:8274' />
