@@ -1,0 +1,5 @@
+<req type='addagent' name='local' address='tcp://127.0.0.1:8272' />
+<req type='listagents' />
+<req name='ls' type='cmd' agent='local'>
+    <cmd>ls -l /</cmd>
+</req>
