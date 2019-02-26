@@ -38,8 +38,8 @@ sub handle_request {
     my $type = $req->{'type'}->value();
     #my $xjr = $req->xjr();
     my $xjr;
-    if   ( $type eq 'addnode'   ) { $xjr = "<req>". $req->xjr() . "</req>"; }
-    elsif( $type eq 'listnodes' ) { $xjr = "<req>". $req->xjr() . "</req>"; }
+    if   ( $type eq 'add_agent'   ) { $xjr = "<req>". $req->xjr() . "</req>"; }
+    elsif( $type eq 'list_agents' ) { $xjr = "<req>". $req->xjr() . "</req>"; }
     elsif( $type eq 'cmd'       ) { $xjr = "<req>". $req->xjr() . "</req>"; }
     if( $xjr ) {
         nn_send( $socket, $xjr, 0 );

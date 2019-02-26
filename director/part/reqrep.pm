@@ -7,7 +7,7 @@ use part::misc;
 
 my $cmdId = 1;
 
-my $data = {};
+my $reqrepContext = {};
 
 sub dofork {
     my $pid = fork();
@@ -52,8 +52,6 @@ sub dolisten {
     }
 }
 
-my %agents;
-
 sub add_cmd {
     my $node = shift;
     my $id = $cmdId++;
@@ -65,20 +63,20 @@ sub add_cmd {
 }
 
 sub handle_data_req {
-    my ( $buffer, $bytes ) = @_;
-    print "\nReceived '$buffer'\n";
+    my ( $reqRaw, $bytes ) = @_;
+    print "\nReceived '$reqRaw'\n";
     print "\n";
-    if( $buffer ) {
-        my $root = Parse::XJR->new( text => $buffer );
+    if( $reqRaw ) {
+        my $root = Parse::XJR->new( text => $reqRaw );
         my $req = $root->{'req'};
         my $type = $req->{'type'}->value();
         
         if( $type eq 'cmd' ) {
-            # Forward the command to the scheduler
-            part::scheduler::new_item( $data, $buffer );
-            
             # Forward the command to the datastore to track results
-            part::datastore::new_item( $data, $buffer );
+            my $item_id = part::datastore::new_item( $reqrepContext, $reqRaw );
+            
+            # Forward the command to the scheduler
+            part::scheduler::new_item( $reqrepContext, $reqRaw, $item_id );
             
             #my $node = $req->{node}->value();
             #print "Queuing Command request\n  node=$node\n";
@@ -89,23 +87,18 @@ sub handle_data_req {
             #$req->{id} = $id;
             #send_cmd( $req, $node );
         }
-        elsif( $type eq 'addagent' ) {
-            print "Adding node\n";
-            my $name = $req->{name}->value();
-            my $address = $req->{address}->value();
-            $agents{$name} = {
-                address => $address
-            };
-            return { response => "<result>agent $name added</result>" };
+        elsif( $type eq 'add_agent' ) {
+            print "Adding agent\n";
+            #my $name = $req->{name}->value();
+            #my $address = $req->{address}->value();
+            #$agents{$name} = {
+            #    address => $address
+            #};
+            #return { response => "<result>agent $name added</result>" };
+            return part::datastore::raw_request( $reqRaw );
         }
-        elsif( $type eq 'listnodes' ) {
-            my $result = '';
-            for my $agentName ( keys %agents ) {
-                my $agent = $agents{ $agentName };
-                my $addr = $agent->{address};
-                $result .= "$agentName\n  address=$addr\n";
-            }
-            return { response => "<result>$result</result>" };
+        elsif( $type eq 'list_agents' ) {
+            return part::datastore::raw_request( $reqRaw );
         }
         else {
             print "Unknown req: $type\n";

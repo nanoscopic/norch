@@ -5,6 +5,33 @@ use NanoMsg::Raw;
 use lib '..';
 use part::misc;
 
+sub handle_datastore_req {
+    my ( $buffer, $size ) = @_;
+    my $req = Parse::XJR->new( text => $buffer );
+    $req = $req->{req};
+    my $type = $req->{type}->value();
+    if( $type eq 'result' ) {
+        # Example result message:
+        # <req type='result' itemId='123' errorCode='0'>
+        #   <stdout>...</stdout>
+        #   <stderr>...</stderr>
+        # </req>
+        
+        # TODO
+        
+        # Store the results here ( note we don't store in the 'datastore' )
+        # Notify the datastore though that the item is 'done'
+        # Notify the scheduler as well, so that follow up items can be done
+        
+        # It may be necessary to process the results to store the results into variables for
+        #   use by subsequent items. The result variables though should be stored into the
+        #   datastore, so perhaps the scheduler should be notified by the datastore once
+        #   it has actually stored the results. It would be bad if the scheduler was notified
+        #   and scheduled a following task before the variables needed by the following
+        #   task are stored in the datastore.
+    }
+}
+
 sub dolisten {
     my $socket_address_in = "tcp://127.0.0.1:8274";
     umask(0);
@@ -32,7 +59,7 @@ sub dolisten {
             next;
         }
         my $startTime = [ gettimeofday() ];
-        my $res = handle_data( $buf, $bytes );
+        my $res = handle_results_req( $buf, $bytes );
         my $endTime = [ gettimeofday() ];
         my $len = int( tv_interval( $startTime, $endTime ) * 10000 ) / 10;
         my $sent_bytes = $res->{'sent_bytes'};

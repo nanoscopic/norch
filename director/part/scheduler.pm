@@ -7,6 +7,7 @@ use part::misc;
 
 my $socket_address = "inproc://scheduler";
 my @items;
+my $schedulerContext = {};
 
 sub dofork {
     my $pid = fork();
@@ -14,33 +15,40 @@ sub dofork {
 }
 
 sub new_item {
-    my ( $context, $item ) = @_;
-    my $request = "<req type='new_item'><item><![CDATA[$item]]></item></req>";
-    request( $context, $request );
+    my ( $context, $item, $itemId ) = @_;
+    my $request = "<req type='new_item' itemId='$itemId'><item><![CDATA[$item]]></item></req>";
+    raw_request( $context, $request );
 }
 
-sub request {
+sub raw_request {
     my ( $context, $request ) = @_;
-    my $socket = $context->{'scheduler_socket'};
-    nn_send( $socket, $in, 0 );
+    my $socket = get_socket( $context );
+    nn_send( $socket, $request, 0 );
     my $bytes = nn_recv( $socket, my $buf, 5000, 0 );
     return $reply;
 }
 
+sub get_socket {
+    my $context = shift;
+    my $socket = $context->{'scheduler_socket'};
+    if( $socket ) { return $socket; }
+    return doconnect( $context );
+}
+
 sub doconnect {
     my $context = shift;
-    my $socket_address_in = "inproc://scheduler";
     
-    my $socket_out = nn_socket(AF_SP, NN_REQ);
+    my $socket = nn_socket(AF_SP, NN_REQ);
     #print "Listening for datastore requests on $socket_address\n";
-    my $bindok = nn_connect($socket_in, $socket_address);
+    my $bindok = nn_connect($socket, $socket_address);
     if( !$bindok ) {
         my $err = nn_errno();
         $err = part::misc::decode_err( $err );
         die "fail to connect: $err";
     }
-    nn_setsockopt( $socket_in, NN_SOL_SOCKET, NN_SENDTIMEO, 2000 ); # timeout send in 2000ms
-    $context->{'scheduler_socket'} = $socket_out;
+    nn_setsockopt( $socket, NN_SOL_SOCKET, NN_SENDTIMEO, 2000 ); # timeout send in 2000ms
+    $context->{'scheduler_socket'} = $socket;
+    return $socket;
 }
 
 sub handle_scheduler_req {
@@ -50,10 +58,35 @@ sub handle_scheduler_req {
     my $type = $req->{type}->value();
     if( $type eq 'new_item' ) {
         my $raw_item = $req->{item}->value();
+        my $itemId = $req->{itemId}->value();
         my $item = Parse::XJR->new( text => $raw_item );
-        push( @items, [ $raw_item, $item ] );
+        push( @items, [ $raw_item, $item, $itemId ] );
     }
     return { response => 'none' };
+}
+
+# Cache of destination sockets and addresses
+my %dest_socket;
+my %dest_addr;
+
+sub agent_name_to_socket {
+    my $agent = shift;
+    
+    # looking first in a cache of open destinations
+    if( defined $dest_socket{ $agent } ) {
+        return $dest_socket{ $agent };
+    }
+    
+    # if we don't have the destination socket open/cached, use cache of destination addr
+    elsif( defined $dest_addr{ $agent } ) {
+        my $dest_socket = $dest_socket{ $agent } = open_node_socket( $dest_addr{ $agent } );
+        return $dest_socket;
+    }
+        
+    # if we don't have the destination address, get it from the datastore
+    my $dest_addr = $dest_addr{ $agent } = part::datastore::get_agent_addr( $schedulerContext, $agent );
+    my $dest_socket = $dest_socket{ $agent } = open_node_socket( $dest_addr );
+    return $dest_socket;
 }
 
 sub send_items {
@@ -61,12 +94,13 @@ sub send_items {
         my $itemParts = shift @items;
         my $raw_item = $itemParts->[0];
         my $item = $itemParts->[1];
+        my $itemId = $itemParts->[2];
+        my $agent = $item->{agent}->value();
         
         # determine the socket to send to the item
-        # looking first in a cache of open destinations
-        # if we don't have the destination socket open/cached, use cache of destination addr
-        # if we don't have the destination address, get it from the datastore
+        my $socket = agent_name_to_socket( $agent );
         
+        nn_send( $socket, "$raw_item<extra itemId='$itemId'/>" );
     }
 }
 

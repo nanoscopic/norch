@@ -67,13 +67,46 @@ char *request( output *dest, char *data, int dataLen, int *respSize ) {
     return response;
 }
 
+void handle_xjr_item( xjr_node *item, char *itemIdStr ) {
+    int itemId = atoi( itemIdStr );
+    char *type = xjr_node__get_valuez( item, "type", 4 );
+    if( !strncmp( type, "cmd", 3 ) ) {
+        char *cmd = xjr_node__get_valuez( item, "cmd", 3 );
+        
+        // Run the cmd, saving the stdout and stderr of it
+        // Send a nanomsg request back to the director with the results
+        // Use the 'results' socket to send it back
+        // Include the itemId in the result message so that it can be correlated
+        
+        // Example result message:
+        // <req type='result' itemId='123' errorCode='0'>
+        //   <stdout>...</stdout>
+        //   <stderr>...</stderr>
+        // </req>
+        
+        // TODO
+        
+        free( cmd );
+    }
+    free( type );
+}
+
 void handle_msg( int bytes, char *buf ) {
     printf("Got command: %s\n", buf );
-    if( !strncmp( buf, "ping", 4 ) ) {
+    if( buf[0] == '<' ) {
+        xjr_node *root = parse( 0, buf, bytes );
+        xjr_node *req = xjr_node__get( root, "req", 3 ); // the request IS the 'item'
+        xjr_node *extra = xjr_node__get( root, "extra", 5 );
+        char *itemId = xjr_node__get_valuez( extra, "itemId", 6 );
+        handle_xjr_item( req, itemId );
+        free( itemId );
+        xjr_node__delete( root );
+    }
+    else if( !strncmp( buf, "ping", 4 ) ) {
         printf("Ping; ponging back\n");
         send_data( results, "pong", 4 );
     }
-    if( !strncmp( buf, "reg", 3 ) ) {
+    else if( !strncmp( buf, "reg", 3 ) ) {
         printf("Told to register\n");
         int resSize;
         char *res = request( requests, "reg", 3, &resSize );
