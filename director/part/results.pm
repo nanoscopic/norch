@@ -5,11 +5,11 @@ use NanoMsg::Raw;
 use lib '..';
 use part::misc;
 
-sub handle_datastore_req {
+sub handle_results_item {
     my ( $buffer, $size ) = @_;
-    my $req = Parse::XJR->new( text => $buffer );
-    $req = $req->{req};
-    my $type = $req->{type}->value();
+    my $root = Parse::XJR->new( text => $buffer );
+    my $req = $root->firstChild();
+    my $type = $req->name();
     if( $type eq 'result' ) {
         # Example result message:
         # <req type='result' itemId='123' errorCode='0'>
@@ -59,18 +59,13 @@ sub dolisten {
             next;
         }
         my $startTime = [ gettimeofday() ];
-        my $res = handle_results_req( $buf, $bytes );
+        my $response = handle_results_item( $buf, $bytes );
         my $endTime = [ gettimeofday() ];
         my $len = int( tv_interval( $startTime, $endTime ) * 10000 ) / 10;
         my $sent_bytes = $res->{'sent_bytes'};
         
         #logr( type => "visit", time => "${len}ms", sent => "$sent_bytes" );
     }
-}
-
-sub handle_data {
-    my ( $buffer, $bytes ) = @_;
-    return { sent_bytes => 0 };
 }
 
 1;

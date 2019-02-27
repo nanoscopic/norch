@@ -1,5 +1,5 @@
-<req type='add_agent' name='local' address='tcp://127.0.0.1:8272' />
-<req type='list_agents' />
-<req name='ls' type='cmd' agent='local'>
+<add_agent name='local' address='tcp://127.0.0.1:8272' />
+<list_agents />
+<cmd name='ls' agent='local'>
     <cmd>ls -l /</cmd>
-</req>
+</cmd>

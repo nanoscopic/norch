@@ -16,7 +16,7 @@ sub dofork {
 
 sub new_item {
     my ( $context, $item, $itemId ) = @_;
-    my $request = "<req type='new_item' itemId='$itemId'><item><![CDATA[$item]]></item></req>";
+    my $request = "<new_item itemId='$itemId'><item><![CDATA[$item]]></item></new_item>";
     raw_request( $context, $request );
 }
 
@@ -51,18 +51,19 @@ sub doconnect {
     return $socket;
 }
 
-sub handle_scheduler_req {
+sub handle_scheduler_item {
     my ( $buffer, $size ) = @_;
-    my $req = Parse::XJR->new( text => $buffer );
-    $req = $req->{req};
-    my $type = $req->{type}->value();
+    my $root = Parse::XJR->new( text => $buffer );
+    my $req = $root->firstChild();
+    my $type = $req->name();
     if( $type eq 'new_item' ) {
         my $raw_item = $req->{item}->value();
         my $itemId = $req->{itemId}->value();
-        my $item = Parse::XJR->new( text => $raw_item );
+        my $root2 = Parse::XJR->new( text => $raw_item );
+        my $item = $root2->firstChild();
         push( @items, [ $raw_item, $item, $itemId ] );
     }
-    return { response => 'none' };
+    return 'none';
 }
 
 # Cache of destination sockets and addresses
@@ -134,10 +135,9 @@ sub dolisten {
             next;
         }
         my $startTime = [ gettimeofday() ];
-        my $res = handle_scheduler_req( $buf, $bytes );
+        my $response = handle_scheduler_item( $buf, $bytes );
         my $endTime = [ gettimeofday() ];
         my $len = int( tv_interval( $startTime, $endTime ) * 10000 ) / 10;
-        my $response = $res->{'response'};
         nn_send( $socket_in, $response, 0 );
         my $sent_bytes = length( $response );
         

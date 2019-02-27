@@ -41,10 +41,9 @@ sub dolisten {
             next;
         }
         my $startTime = [ gettimeofday() ];
-        my $res = handle_data_req( $buf, $bytes );
+        my $response = handle_incoming_xjr( $buf, $bytes );
         my $endTime = [ gettimeofday() ];
         my $len = int( tv_interval( $startTime, $endTime ) * 10000 ) / 10;
-        my $response = $res->{'response'};
         nn_send( $socket_in, $response, 0 );
         my $sent_bytes = length( $response );
         
@@ -62,49 +61,45 @@ sub add_cmd {
     return $id;
 }
 
-sub handle_data_req {
-    my ( $reqRaw, $bytes ) = @_;
-    print "\nReceived '$reqRaw'\n";
-    print "\n";
-    if( $reqRaw ) {
-        my $root = Parse::XJR->new( text => $reqRaw );
-        my $req = $root->{'req'};
-        my $type = $req->{'type'}->value();
-        
-        if( $type eq 'cmd' ) {
-            # Forward the command to the datastore to track results
-            my $item_id = part::datastore::new_item( $reqrepContext, $reqRaw );
-            
-            # Forward the command to the scheduler
-            part::scheduler::new_item( $reqrepContext, $reqRaw, $item_id );
-            
-            #my $node = $req->{node}->value();
-            #print "Queuing Command request\n  node=$node\n";
-            #my $cmd = $req->{'cmd'}->value();
-            #print "  cmd = $cmd\n";
-            #my $id = add_cmd( $cmd );
-            #print "  id = $id\n";
-            #$req->{id} = $id;
-            #send_cmd( $req, $node );
-        }
-        elsif( $type eq 'add_agent' ) {
-            print "Adding agent\n";
-            #my $name = $req->{name}->value();
-            #my $address = $req->{address}->value();
-            #$agents{$name} = {
-            #    address => $address
-            #};
-            #return { response => "<result>agent $name added</result>" };
-            return part::datastore::raw_request( $reqRaw );
-        }
-        elsif( $type eq 'list_agents' ) {
-            return part::datastore::raw_request( $reqRaw );
-        }
-        else {
-            print "Unknown req: $type\n";
-        }
+sub handle_incoming_xjr {
+    my ( $rawXjr, $bytes ) = @_;
+    print "\nReceived '$rawXjr'\n\n";
+    
+    my $root = Parse::XJR->new( text => $rawXjr );
+    my $curChild = $root->firstChild();
+    
+    my $res = '';
+    while( $curChild ) {
+        $curChild = $curChild->next();
+        $res .= handle_item( $item );
     }
-    return { response  => "<result>test</result>" };
+    return $res;
+}
+
+sub handle_item {
+    my $item = shift;
+    my $type = $item->name();
+    my $rawItem = "<$type>" . $item->xjr() . "</$type>";
+        
+    if( $type eq 'cmd' ) {
+        # Forward the command to the datastore to track results
+        my $item_id = part::datastore::new_item( $reqrepContext, $rawItem );
+        
+        # Forward the command to the scheduler
+        part::scheduler::new_item( $reqrepContext, $rawItem, $item_id );
+    }
+    elsif( $type eq 'add_agent' ) {
+        print "Adding agent\n";
+        return part::datastore::raw_request( $rawItem );
+    }
+    elsif( $type eq 'list_agents' ) {
+        return part::datastore::raw_request( $rawItem );
+    }
+    else {
+        print "Unknown item: $type\n";
+    }
+
+    return "<result>test</result>";
 }
 
 sub send_cmd {

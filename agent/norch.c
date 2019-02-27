@@ -18,6 +18,7 @@
 #include<xjr-node.h>
 #include<signal.h>
 #include<pthread.h>
+#include<unistd.h>
 
 char *decode_err( int err );
 
@@ -67,42 +68,45 @@ char *request( output *dest, char *data, int dataLen, int *respSize ) {
     return response;
 }
 
-void handle_xjr_item( xjr_node *item, char *itemIdStr ) {
+void handle_item( xjr_node *item, char *itemIdStr ) {
     int itemId = atoi( itemIdStr );
-    char *type = xjr_node__get_valuez( item, "type", 4 );
-    if( !strncmp( type, "cmd", 3 ) ) {
-        char *cmd = xjr_node__get_valuez( item, "cmd", 3 );
-        
-        // Run the cmd, saving the stdout and stderr of it
-        // Send a nanomsg request back to the director with the results
-        // Use the 'results' socket to send it back
-        // Include the itemId in the result message so that it can be correlated
-        
-        // Example result message:
-        // <req type='result' itemId='123' errorCode='0'>
-        //   <stdout>...</stdout>
-        //   <stderr>...</stderr>
-        // </req>
-        
-        // TODO
-        
-        free( cmd );
-    }
-    free( type );
+    //char *type = xjr_node__get_valuez( item, "type", 4 );
+    
+    // There is no namez function :(
+    int typeLen;
+    char *type = xjr_node__name( item, &typeLen );
+    char *typez = malloc( typeLen + 1 );
+    memcpy( typez, type, typeLen );
+    typez[ typeLen ] = 0x00;
+    
+    if     ( !strncmp( type, "cmd", 3 ) ) { item_cmd( item, itemIdStr ); }
+    //else if( !strncmp( type, ...      ) ) { item_...( item, itemIdStr ); }
+    
+    free( typez );
 }
 
-void handle_msg( int bytes, char *buf ) {
-    printf("Got command: %s\n", buf );
+void handle_incoming_bytes( int bytes, char *buf ) {
     if( buf[0] == '<' ) {
+        printf("Got xjr commandset\n");
         xjr_node *root = parse( 0, buf, bytes );
-        xjr_node *req = xjr_node__get( root, "req", 3 ); // the request IS the 'item'
+        
         xjr_node *extra = xjr_node__get( root, "extra", 5 );
         char *itemId = xjr_node__get_valuez( extra, "itemId", 6 );
-        handle_xjr_item( req, itemId );
+        
+        xjr_node *curItem = xjr_node__firstChild( root );
+        while( curItem ) {
+            handle_item( curItem, itemId );
+            curItem = curItem->next;
+        }
+        
         free( itemId );
+        
         xjr_node__delete( root );
+        return;
     }
-    else if( !strncmp( buf, "ping", 4 ) ) {
+    
+    printf("Got raw command: %s\n", buf );
+    if( !strncmp( buf, "ping", 4 ) ) {
         printf("Ping; ponging back\n");
         send_data( results, "pong", 4 );
     }
@@ -199,7 +203,7 @@ void intHandler(int dummy) {
     running = 0;
 }
 
-void handle_incoming() {
+void incoming_loop() {
     while( running ) {
         void *buf = NULL;
         int bytes = nn_recv(socket_in, &buf, NN_MSG, 0);
@@ -223,11 +227,11 @@ void handle_incoming() {
         
         printf("Incoming Bytes: %i, Buffer:%s\n\n", bytes, (char *) buf );
         
-        handle_msg( bytes, buf );
+        handle_incoming_bytes( bytes, buf );
     }
 }
 
-void handle_broadcast() {
+void broadcast_loop() {
     while( running ) {
         void *buf = NULL;
         int bytes = nn_recv(broadcast->socket_id, &buf, NN_MSG, 0);
@@ -251,12 +255,12 @@ void handle_broadcast() {
         
         printf("Incoming Bytes: %i, Buffer:%s\n\n", bytes, (char *) buf );
         
-        handle_msg( bytes, buf );
+        handle_incoming_bytes( bytes, buf );
     }
 }
 
 void *broadcast_thread( void *ptr ) {
-    handle_broadcast();
+    broadcast_loop();
     return NULL;
 }
 
@@ -274,7 +278,7 @@ int main( const int argc, const char **argv ) {
             // broadcast thread failed
             bThreadOkay = 0;
         }
-        handle_incoming();
+        incoming_loop();
     }
     if( bThreadOkay ) pthread_join( bThread, NULL );
     

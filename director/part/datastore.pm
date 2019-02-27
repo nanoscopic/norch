@@ -16,13 +16,13 @@ sub dofork {
 
 sub new_item {
     my ( $context, $item ) = @_;
-    my $request = "<req type='new_item'><item><![CDATA[$item]]></item></req>";
+    my $request = "<new_item><item><![CDATA[$item]]></item></new_item>";
     return raw_request( $context, $request );
 }
 
 sub get_agent_addr {
     my ( $context, $agentName ) = @_;
-    my $request = "<req type='get_agent_addr' agentName='$agentName'/>";
+    my $request = "<get_agent_addr agentName='$agentName'/>";
     return raw_request( $context, $request );
 }
 
@@ -59,23 +59,26 @@ sub doconnect {
 
 my %agents;
 
-sub handle_datastore_req {
+sub handle_datastore_item {
     my ( $buffer, $size ) = @_;
-    my $req = Parse::XJR->new( text => $buffer );
-    $req = $req->{req};
-    my $type = $req->{type}->value();
+    my $root = Parse::XJR->new( text => $buffer );
+    my $req = $root->firstChild();
+    my $type = $req->name();
+    
     if( $type eq 'new_item' ) {
         my $raw_item = $req->{item}->value();
-        my $item = Parse::XJR->new( text => $raw_item );
+        my $root2 = Parse::XJR->new( text => $raw_item );
+        my $item = $root2->firstChild();
+        
         my $itemId = $curItemId++;
         $item->{id} = $itemId;
         push( @items, [ $raw_item, $item ] );
-        return { response => $itemId };
+        return $itemId;
     }
     elsif( $type eq 'get_agent_addr' ) {
         my $agentName = $req->{agentName}->value();
         my $agent = $agents{ $agentName };
-        return { response => $agent->{address} };
+        return $agent->{address};
     }
     elsif( $type eq 'add_agent' ) {
         my $agentName = $req->{name}->value();
@@ -83,7 +86,7 @@ sub handle_datastore_req {
         $agents{$agentName} = {
             address => $address
         };
-        return { response => "<result>agent $agentName added</result>" };
+        return "<result>agent $agentName added</result>";
     }
     elsif( $type eq 'list_agents' ) {
         my $result = '';
@@ -92,9 +95,9 @@ sub handle_datastore_req {
             my $addr = $agent->{address};
             $result .= "$agentName\n  address=$addr\n";
         }
-        return { response => "<result>$result</result>" };
+        return "<result>$result</result>";
     }
-    return { response => 'none' };
+    return 'none';
 }
 
 sub dolisten {
@@ -122,10 +125,9 @@ sub dolisten {
             next;
         }
         my $startTime = [ gettimeofday() ];
-        my $res = handle_datastore_req( $buf, $bytes );
+        my $response = handle_datastore_item( $buf, $bytes );
         my $endTime = [ gettimeofday() ];
         my $len = int( tv_interval( $startTime, $endTime ) * 10000 ) / 10;
-        my $response = $res->{'response'};
         nn_send( $socket_in, $response, 0 );
         my $sent_bytes = length( $response );
         
