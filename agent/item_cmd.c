@@ -1,18 +1,29 @@
 #include "item_cmd.h"
 #include<xjr-node.h>
+#include<xjr-helpers.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include<string.h>
+#include <sys/wait.h>
 
-void item_cmd( xjr_node *item, char *itemIdStr ) {
+char *item_cmd( xjr_node *item, char *itemIdStr ) {
     char *cmd = xjr_node__get_valuez( item, "cmd", 3 );
+    
     int itemId = atoi( itemIdStr );
     free( itemIdStr );
+    
+    // Ensure the specified file exists and can be executed
+    if( access( cmd, X_OK ) == -1 ) {
+        char err[400];
+        sprintf(err,"error:File does not exist or is not executable '%s'", cmd );
+        return strdup( err );
+    }
     
     char **args;
     xjr_arr *arr = xjr_node__getarr( item, "arg", 3 );
     if( !arr ) {
         xjr_node__dump( item, 20 );
-        return;
+        return strdup("error:no argument specified");
     }
     int count = arr->count;
     printf("Number of arguments: %i\n", count );
@@ -26,7 +37,7 @@ void item_cmd( xjr_node *item, char *itemIdStr ) {
         int vallen;
         char *value = xjr_node__value( arg, &vallen );
         char *valuez = malloc( vallen + 1 );
-        valuez[ vallen ] = NULL;
+        valuez[ vallen ] = 0x00;//NULL;
         memcpy( valuez, value, vallen );
         args[ i+1 ] = valuez;
         printf("Argument %i: '%s'\n", i, valuez );
@@ -157,10 +168,10 @@ void item_cmd( xjr_node *item, char *itemIdStr ) {
         }
         free( args );
         
-        return;
+        return strdup( msg );
     }
     
     item_cmd_cleanup:
     // failed -> send a failure message   
-    return;
+    return strdup("error:unknown");
 }

@@ -1,5 +1,6 @@
 <add_agent name='local' address='tcp://127.0.0.1:8272' />
 <list_agents />
 <cmd name='ls' agent='local'>
-    <cmd>ls -l /</cmd>
+    <cmd>/bin/ls</cmd>
+    <arg>-l</arg>
 </cmd>

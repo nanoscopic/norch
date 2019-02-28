@@ -12,9 +12,11 @@ use lib '.';
 use part::datastore;
 use part::reqrep;
 use part::results;
+use part::scheduler;
 
 part::reqrep::dofork();
 part::datastore::dofork();
+part::scheduler::dofork();
 part::results::dolisten();
-part::scheduler::dolisten();
+
 exit(0);

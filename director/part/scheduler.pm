@@ -4,10 +4,12 @@ use warnings;
 use NanoMsg::Raw;
 use lib '..';
 use part::misc;
+use Time::HiRes qw/gettimeofday tv_interval/;
 
-my $socket_address = "inproc://scheduler";
+#my $socket_address = "inproc://scheduler";
+my $socket_address = "tcp://127.0.0.1:8301";
 my @items;
-my $schedulerContext = {};
+my $schedulerContext = { name => 'scheduler' };
 
 sub dofork {
     my $pid = fork();
@@ -22,9 +24,17 @@ sub new_item {
 
 sub raw_request {
     my ( $context, $request ) = @_;
+    
+    print "Sending '$request' to scheduler\n";
+    
     my $socket = get_socket( $context );
-    nn_send( $socket, $request, 0 );
-    my $bytes = nn_recv( $socket, my $buf, 5000, 0 );
+    my $sentBytes = nn_send( $socket, $request, 0 );
+    if( $sentBytes == -1 ) {
+        my $err = nn_errno();
+        $err = part::misc::decode_err( $err );
+        die "failed to send: $err";
+    }
+    my $bytes = nn_recv( $socket, my $reply, 5000, 0 );
     return $reply;
 }
 
@@ -46,22 +56,25 @@ sub doconnect {
         $err = part::misc::decode_err( $err );
         die "fail to connect: $err";
     }
-    nn_setsockopt( $socket, NN_SOL_SOCKET, NN_SENDTIMEO, 2000 ); # timeout send in 2000ms
+    nn_setsockopt( $socket, NN_SOL_SOCKET, NN_SNDTIMEO, 2000 ); # timeout send in 2000ms
     $context->{'scheduler_socket'} = $socket;
     return $socket;
 }
 
 sub handle_scheduler_item {
     my ( $buffer, $size ) = @_;
+    print "Scheduler received '$buffer'\n";
     my $root = Parse::XJR->new( text => $buffer );
     my $req = $root->firstChild();
     my $type = $req->name();
+    
+    print "  type=$type\n";
     if( $type eq 'new_item' ) {
         my $raw_item = $req->{item}->value();
         my $itemId = $req->{itemId}->value();
         my $root2 = Parse::XJR->new( text => $raw_item );
         my $item = $root2->firstChild();
-        push( @items, [ $raw_item, $item, $itemId ] );
+        push( @items, [ $root2, $raw_item, $item, $itemId ] );
     }
     return 'none';
 }
@@ -69,6 +82,22 @@ sub handle_scheduler_item {
 # Cache of destination sockets and addresses
 my %dest_socket;
 my %dest_addr;
+
+sub open_node_socket {
+    my ( $address, $agent ) = @_;
+    
+    my $socket = nn_socket(AF_SP, NN_PUSH);
+    print "Attempting to connect to agent $agent on $address\n";
+    my $bindok = nn_connect($socket, $address);
+    if( !$bindok ) {
+        my $err = nn_errno();
+        $err = part::misc::decode_err( $err );
+        die "fail to connect: $err";
+    }
+    nn_setsockopt( $socket, NN_SOL_SOCKET, NN_SNDTIMEO, 1000 ); # timeout send in 1000ms
+    
+    return $socket;
+}
 
 sub agent_name_to_socket {
     my $agent = shift;
@@ -86,29 +115,35 @@ sub agent_name_to_socket {
         
     # if we don't have the destination address, get it from the datastore
     my $dest_addr = $dest_addr{ $agent } = part::datastore::get_agent_addr( $schedulerContext, $agent );
-    my $dest_socket = $dest_socket{ $agent } = open_node_socket( $dest_addr );
+    my $dest_socket = $dest_socket{ $agent } = open_node_socket( $dest_addr, $agent );
     return $dest_socket;
 }
 
 sub send_items {
-    while( @items ) {
-        my $itemParts = shift @items;
-        my $raw_item = $itemParts->[0];
-        my $item = $itemParts->[1];
-        my $itemId = $itemParts->[2];
+    print "Attempting to send items\n";
+    while( my $itemParts = shift @items ) {
+        print "ITEM\n";
+        my $root = $itemParts->[0];
+        my $raw_item = $itemParts->[1];
+        my $item = $itemParts->[2];
+        my $itemId = $itemParts->[3];
+        $item->dump(20);
         my $agent = $item->{agent}->value();
         
         # determine the socket to send to the item
         my $socket = agent_name_to_socket( $agent );
         
-        nn_send( $socket, "$raw_item<extra itemId='$itemId'/>" );
+        my $toSend = "$raw_item<extra itemId='$itemId'/>";
+        print "Sending '$toSend' to agent $agent\n";
+        nn_send( $socket, $toSend );
     }
+    
+    print "Done sending items\n";
 }
 
 sub dolisten {
-    my $socket_address = "inproc://scheduler";
     my $socket_in = nn_socket(AF_SP, NN_REP);
-    print "Listening for datastore requests on $socket_address\n";
+    print "Listening for scheduler requests on $socket_address\n";
     my $bindok = nn_bind($socket_in, $socket_address);
     if( !$bindok ) {
         my $err = nn_errno();
@@ -127,7 +162,7 @@ sub dolisten {
         if( !$bytes ) {
             my $err = nn_errno();
             if( $err == ETIMEDOUT ) {
-                print '.';
+                print 'SC ';
                 next;
             }
             $err = part::misc::decode_err( $err );
@@ -138,8 +173,15 @@ sub dolisten {
         my $response = handle_scheduler_item( $buf, $bytes );
         my $endTime = [ gettimeofday() ];
         my $len = int( tv_interval( $startTime, $endTime ) * 10000 ) / 10;
-        nn_send( $socket_in, $response, 0 );
-        my $sent_bytes = length( $response );
+        print "scheduler responding with '$response'\n";
+        my $sent_bytes = nn_send( $socket_in, $response, 0 );
+        if( $sent_bytes == -1 ) {
+            my $err = nn_errno();
+            $err = part::misc::decode_err( $err );
+            die "failed to send: $err";
+        }
+        print "Scheduler responded $sent_bytes bytes\n";
+        #my $sent_bytes = length( $response );
         
         #logr( type => "visit", time => "${len}ms", sent => "$sent_bytes" );
     }

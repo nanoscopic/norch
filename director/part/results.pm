@@ -51,7 +51,7 @@ sub dolisten {
         if( !$bytes ) {
             my $err = nn_errno();
             if( $err == ETIMEDOUT ) {
-                print '.';
+                print 'RS ';
                 next;
             }
             $err = part::misc::decode_err( $err );
@@ -62,7 +62,7 @@ sub dolisten {
         my $response = handle_results_item( $buf, $bytes );
         my $endTime = [ gettimeofday() ];
         my $len = int( tv_interval( $startTime, $endTime ) * 10000 ) / 10;
-        my $sent_bytes = $res->{'sent_bytes'};
+        #my $sent_bytes = $res->{'sent_bytes'};
         
         #logr( type => "visit", time => "${len}ms", sent => "$sent_bytes" );
     }

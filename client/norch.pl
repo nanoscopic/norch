@@ -67,7 +67,7 @@ sub handle_cmdline {
         my $cmd = $ARGV[1];
         $msg = "<cmd><cmd><![CDATA[$cmd]]></cmd></cmd>";
     }
-    elsif {    
+    else {    
         $msg = "<$req/>";
     }
     

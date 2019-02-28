@@ -1,5 +1,6 @@
 #include "item_cmd.h"
 #include<xjr-machine.h>
+#include<string.h>
 
 int main( int argc, char *argv[] ) {
     xjr_node__disable_mempool();

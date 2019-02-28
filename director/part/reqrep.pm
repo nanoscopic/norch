@@ -4,10 +4,12 @@ use warnings;
 use NanoMsg::Raw;
 use lib '..';
 use part::misc;
+use Time::HiRes qw/gettimeofday tv_interval/;
+use part::scheduler;
 
 my $cmdId = 1;
 
-my $reqrepContext = {};
+my $reqrepContext = { name => 'reqrep' };
 
 sub dofork {
     my $pid = fork();
@@ -33,7 +35,7 @@ sub dolisten {
         if( !$bytes ) {
             my $err = nn_errno();
             if( $err == ETIMEDOUT ) {
-                print '.';
+                print 'RR ';
                 next;
             }
             $err = part::misc::decode_err( $err );
@@ -63,15 +65,15 @@ sub add_cmd {
 
 sub handle_incoming_xjr {
     my ( $rawXjr, $bytes ) = @_;
-    print "\nReceived '$rawXjr'\n\n";
+    print "\nReqrep Received '$rawXjr'\n\n";
     
     my $root = Parse::XJR->new( text => $rawXjr );
     my $curChild = $root->firstChild();
     
     my $res = '';
     while( $curChild ) {
+        $res .= handle_item( $curChild );
         $curChild = $curChild->next();
-        $res .= handle_item( $item );
     }
     return $res;
 }
@@ -82,6 +84,8 @@ sub handle_item {
     my $rawItem = "<$type>" . $item->xjr() . "</$type>";
         
     if( $type eq 'cmd' ) {
+        print "Reqrep - Cmd incoming\n";
+        
         # Forward the command to the datastore to track results
         my $item_id = part::datastore::new_item( $reqrepContext, $rawItem );
         
@@ -89,11 +93,12 @@ sub handle_item {
         part::scheduler::new_item( $reqrepContext, $rawItem, $item_id );
     }
     elsif( $type eq 'add_agent' ) {
-        print "Adding agent\n";
-        return part::datastore::raw_request( $rawItem );
+        print "Reqrep - Adding agent\n";
+        return part::datastore::raw_request( $reqrepContext, $rawItem );
     }
     elsif( $type eq 'list_agents' ) {
-        return part::datastore::raw_request( $rawItem );
+        print "Reqrep - Listing agents\n";
+        return part::datastore::raw_request( $reqrepContext, $rawItem );
     }
     else {
         print "Unknown item: $type\n";
