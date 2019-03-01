@@ -24,11 +24,13 @@
 #include "broadcast_handler.h"
 #include "returner.h"
 #include "runner.h"
+#include "config.h"
 
 char *decode_err( int err );
 
-output *broadcast = NULL;
-output *requests  = NULL;
+int broadcast_socket = 0;
+int requests_socket  = 0;
+int results_socket   = 0;
     
 char *socket_address_in = NULL;
 static volatile int running = 0;
@@ -57,52 +59,20 @@ char *request( output *dest, char *data, int dataLen, int *respSize ) {
     return response;
 }
 
-void setup_outputs( xjr_node *outputs ) {
-    xjr_node *broadcast_node = xjr_node__get( configRoot, "broadcast"        , 9  );
-    if( !broadcast_node ) {
-        fprintf(stderr,"config has no broadcast node\n");
-        exit(1);
-    }
-    xjr_node *requests_node  = xjr_node__get( configRoot, "director_requests", 17 );
-    if( !requests_node ) {
-        fprintf(stderr,"config has no director_requests node\n");
-        exit(1);
-    }
-    
-    broadcast = setup_output( broadcast_node, NN_SUB, 200, 1000 );
-    requests  = setup_output( requests_node , NN_REQ, 200, 1000 );
-    
-    /*xjr_node *results_node  = xjr_node__get( configRoot, "director_results", 16 );
-    if( !results_node ) {
-        fprintf(stderr,"config has no director_results node\n");
-        exit(1);
-    }*/
-    //returner_setup_output( configRoot );
+void setup_sockets( config *conf ) {
+    broadcast_socket = make_nn_socket( conf->director_broadcast_socket, connect, NN_SUB,  1000, 1000 );
+    requests_socket  = make_nn_socket( conf->director_requests_socket , connect, NN_REQ,  1000, 1000 );
+    results_socket   = make_nn_socket( conf->director_results_socket  , connect, NN_PUSH, 2000, 0 );
+    socket_in        = make_nn_socket( conf->input_socket             , bind   , NN_PULL, 200, 0 );
 }
 
 void cleanup_outputs() {
-    if( broadcast ) output__delete( broadcast );
-    if( requests  ) output__delete( requests  );
-    
-    // TODO returner_cleanup_output();
+    if( broadcast_socket ) nn_close( broadcast_socket );
+    if( requests_socket  ) nn_close( requests_socket  );
+    if( results_socket   ) nn_close( results_socket   );
 }
 
-int setup_input() {
-    int recv_timeout = 200;
-    
-    socket_in = nn_socket(AF_SP, NN_PULL);
-    
-    int bind_res = nn_bind(socket_in, socket_address_in);
-    if( bind_res < 0 ) {
-        fprintf( stderr, "Bind to %s error\n", socket_address_in);
-        return 5;
-    }
-    nn_setsockopt( socket_in, NN_SOL_SOCKET, NN_RCVTIMEO, &recv_timeout, sizeof( recv_timeout ) );
-    
-    return 0;
-}
-
-int config() {
+int doconfig() {
     char *configFile = "config.xjr";
     char *buffer;
     xjr_node__disable_mempool();
@@ -111,22 +81,12 @@ int config() {
         fprintf( stderr, "Could not open config file %s\n", configFile );
         return 1;
     }
-    xjr_node *input = xjr_node__get( configRoot, "input", 5 );
-    if( !input ) {
-        fprintf( stderr, "Config does not contain input node\n" );
-        return 2;
-    }
-    
-    socket_address_in = xjr_node__get_valuez( input, "socket", 6 );
-    if( !socket_address_in ) {
-        fprintf( stderr, "Input node does not have a socket\n" );
-        return 4;
-    }
+    config *conf = read_config( configRoot );
+    print_config( conf );
     
     umask( 0 );
-    int res = setup_input();
-    if( res ) return res;
-    setup_outputs( configRoot );
+    
+    setup_sockets( conf );
     
     // TODO free config root
     
@@ -174,7 +134,7 @@ void incoming_loop() {
 }
 
 int main( const int argc, const char **argv ) {
-    int configError = config();
+    int configError = doconfig();
     
     if( !configError ) {
         signal(SIGINT, intHandler);

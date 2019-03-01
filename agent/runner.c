@@ -33,6 +33,7 @@ void runner_ipc_close() {
 }
 
 void *runner_thread_func( void *ptr ) {
+    runner_setup_ipc();
     runner_loop();
     return NULL;
 }

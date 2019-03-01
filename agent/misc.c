@@ -24,8 +24,14 @@ int make_nn_socket( char *address, enum bindtype btype, int type, int send_timeo
     int socket = nn_socket( AF_SP, type );
     int bind_res;
     
-    if     ( btype == bind    ) bind_res = nn_bind   ( socket, address );
-    else if( btype == connect ) bind_res = nn_connect( socket, address );
+    if( btype == bind ) {
+        fprintf(stderr,"Binding to %s\n", address );
+        bind_res = nn_bind( socket, address );
+    }
+    else if( btype == connect ) {
+        fprintf(stderr,"Connecting to %s\n", address );
+        bind_res = nn_connect( socket, address );
+    }
     else {
         // can never happen
         bind_res = -1;

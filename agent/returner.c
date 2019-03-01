@@ -10,7 +10,7 @@
 #include<pthread.h>
 #include"misc.h"
 
-output *results_socket = NULL;
+extern int results_socket;// = 0;
 
 pthread_t returner_thread;
 int returner_started = 0;
@@ -31,8 +31,7 @@ void returner_ipc_close() {
 }
 
 void *returner_thread_func( void *ptr ) {
-    results_socket = output__new();
-    results_socket->socket_id = make_nn_socket( "tcp://127.0.0.1:8274", connect, NN_PUSH, 2000, 0 );
+    returner_setup_ipc();
     returner_loop();
     return NULL;
 }
@@ -63,7 +62,7 @@ void returner_handle_item( returnerItem *item ) {
     int len = item->len;
     
     printf("Sending results '%.*s'\n", len, data );
-    int sentBytes = nn_send( results_socket->socket_id, data, len, 0 );
+    int sentBytes = nn_send( results_socket, data, len, 0 );
     if( sentBytes == -1 ) {
         int err = errno;
         char *errStr = decode_err( err );
@@ -102,17 +101,13 @@ void returner_loop() {
     }
 }
 
-void returner_setup_output( xjr_node *configRoot ) {
-    xjr_node *results_node = xjr_node__get( configRoot, "director_results" , 16 );
-    if( !results_node ) {
-        fprintf(stderr,"Configroot has no director_results node\n");
-        exit(1);
-    }
-    results_socket = setup_output( results_node, NN_PUSH, 2000, 1000 );
-}
+//void returner_setup_output( int socketin ) {
+//    results_socket = socketin;
+//}
 
 void returner_cleanup_output() {
-    if( results_socket ) output__delete( results_socket );
+    //if( results_socket ) output__delete( results_socket );
+    // TODO; teardown results_socket; it is a normal nanomsg socket
 }
 
 void returner_queue_result( char *result ) {
