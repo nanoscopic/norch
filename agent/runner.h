@@ -16,4 +16,6 @@ void runner_queue_incoming_bytes( int bytes, char *buf );
 void runner_loop();
 void join_runner();
 void spawn_runner( volatile int *running );
+void runner_gated_incoming_bytes( int gate, int bytes, char *buf );
+int runner_open_gate();
 #endif

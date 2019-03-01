@@ -16,23 +16,14 @@ pthread_t returner_thread;
 int returner_started = 0;
 volatile int *returner_running;
 int returner_ipc_socket;
-char *returner_address = "inproc://returner";
+char *returner_address = "tcp://127.0.0.1:8788";//"inproc://returner";
 
 void returner_setup_ipc() {
-    int send_timeout = 200;
-    int recv_timeout = 200; // Note that this recv timeout does not make send for request reply as those can take longer
-    
-    int socket = nn_socket( AF_SP, NN_PULL );
-    int bind_res = nn_bind( socket, returner_address );
-    if( bind_res < 0 ) {
-        fprintf( stderr, "Error binding %s\n", returner_address );
-        return;
-    }
-    
-    nn_setsockopt( socket, NN_SOL_SOCKET, NN_SNDTIMEO, &send_timeout, sizeof( send_timeout ) );
-    nn_setsockopt( socket, NN_SOL_SOCKET, NN_RCVTIMEO, &recv_timeout, sizeof( recv_timeout ) );
-    
-    returner_ipc_socket = socket;
+    returner_ipc_socket = make_nn_socket( returner_address, bind, NN_PULL, 0, 200 );
+}
+
+int returner_open_gate() {
+    return make_nn_socket( returner_address, connect, NN_PUSH, 300, 0 );
 }
 
 void returner_ipc_close() {
@@ -40,8 +31,21 @@ void returner_ipc_close() {
 }
 
 void *returner_thread_func( void *ptr ) {
+    results_socket = output__new();
+    results_socket->socket_id = make_nn_socket( "tcp://127.0.0.1:8274", connect, NN_PUSH, 2000, 0 );
     returner_loop();
     return NULL;
+}
+
+void returner_gated_incoming_bytes( int gate, int bytes, char *buf ) {
+    //returnerItem__add( buf, bytes );
+    int sent_bytes = nn_send( gate, buf, bytes, 0 );
+    if( sent_bytes == -1 ) {
+        int err = errno;
+        char *errStr = decode_err( err );
+        printf( "\n  returner- failed to send: %s\n",errStr);
+        free( errStr );
+    }
 }
 
 void returner_queue_incoming_bytes( int bytes, char *buf ) {
@@ -61,7 +65,10 @@ void returner_handle_item( returnerItem *item ) {
     printf("Sending results '%.*s'\n", len, data );
     int sentBytes = nn_send( results_socket->socket_id, data, len, 0 );
     if( sentBytes == -1 ) {
-        // TODO error
+        int err = errno;
+        char *errStr = decode_err( err );
+        printf( "\n  returner- failed to send results to director: %s\n",errStr);
+        free( errStr );
     }
 }
 
@@ -74,7 +81,7 @@ void returner_loop() {
         if( bytes < 0 ) {
            int err = errno;
            if( err == ETIMEDOUT ) {
-               printf("x");
+               printf("RT ");
                fflush(stdout);
                continue;
            }
@@ -97,7 +104,11 @@ void returner_loop() {
 
 void returner_setup_output( xjr_node *configRoot ) {
     xjr_node *results_node = xjr_node__get( configRoot, "director_results" , 16 );
-    results_socket = setup_output( results_node  , NN_PUSH );
+    if( !results_node ) {
+        fprintf(stderr,"Configroot has no director_results node\n");
+        exit(1);
+    }
+    results_socket = setup_output( results_node, NN_PUSH, 2000, 1000 );
 }
 
 void returner_cleanup_output() {
@@ -129,6 +140,12 @@ returnerItem *firstReturnerItem;
 
 returnerItem *returnerItem__add( char *data, int len ) {
     returnerItem *self = ( returnerItem * ) calloc( 1, sizeof( returnerItem ) );
+    self->data = data;
+    self->len = len;
+    if( firstReturnerItem ) {
+        self->next = firstReturnerItem;
+    }
+    firstReturnerItem = self;
     return self;
 }
 

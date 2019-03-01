@@ -17,23 +17,15 @@ pthread_t runner_thread;
 int runner_started = 0;
 volatile int *runner_running;
 int runner_ipc_socket;
-char *runner_address = "inproc://runner";
+char *runner_address = "tcp://127.0.0.1:8787";//"inproc://runner";
+int runner_gate_to_returner;
 
 void runner_setup_ipc() {
-    int send_timeout = 200;
-    int recv_timeout = 200; // Note that this recv timeout does not make send for request reply as those can take longer
-    
-    int socket = nn_socket( AF_SP, NN_PULL );
-    int bind_res = nn_bind( socket, runner_address );
-    if( bind_res < 0 ) {
-        fprintf( stderr, "Error binding %s\n", runner_address );
-        return;
-    }
-    
-    nn_setsockopt( socket, NN_SOL_SOCKET, NN_SNDTIMEO, &send_timeout, sizeof( send_timeout ) );
-    nn_setsockopt( socket, NN_SOL_SOCKET, NN_RCVTIMEO, &recv_timeout, sizeof( recv_timeout ) );
-    
-    runner_ipc_socket = socket;
+    runner_ipc_socket = make_nn_socket( runner_address, bind, NN_PULL, 0, 200 );
+}
+
+int runner_open_gate() {
+    return make_nn_socket( runner_address, connect, NN_PUSH, 300, 0 );
 }
 
 void runner_ipc_close() {
@@ -50,6 +42,8 @@ void runner_cleanup() {
 }
 
 void runner_loop() {
+    runner_gate_to_returner = returner_open_gate();
+    
     while( *runner_running ) {
         run_some_items();
         
@@ -58,7 +52,7 @@ void runner_loop() {
         if( bytes < 0 ) {
            int err = errno;
            if( err == ETIMEDOUT ) {
-               printf("x");
+               printf("RN ");
                fflush(stdout);
                continue;
            }
@@ -68,17 +62,18 @@ void runner_loop() {
                break;
            }
            char *errStr = decode_err( err );
-           printf( "failed to receive: %s\n",errStr);
+           printf( "Runner failed to receive: %s\n",errStr);
            free( errStr );
            continue;
         }
         
-        printf("Incoming Bytes: %i, Buffer:%s\n\n", bytes, (char *) buf );
+        printf("\nRunner Incoming Bytes: %i, Buffer:%s\n\n", bytes, (char *) buf );
         
         runner_queue_incoming_bytes( bytes, buf );
     }
     
     runner_cleanup();
+    // TODO close runner_gate_to_returner
 }
 
 void spawn_runner( volatile int *running ) {
@@ -100,6 +95,12 @@ runnerItem *firstRunnerItem;
 
 runnerItem *runnerItem__add( char *data, int len ) {
     runnerItem *self = ( runnerItem * ) calloc( 1, sizeof( runnerItem ) );
+    self->data = data;
+    self->len = len;
+    if( firstRunnerItem ) {
+        self->next = firstRunnerItem;
+    }
+    firstRunnerItem = self;
     return self;
 }
 
@@ -109,9 +110,28 @@ void runnerItem__delete( output *self ) {
 
 runnerItem *runnerItem__pop() {
     if( !firstRunnerItem ) return NULL;
+    printf("\nRunner - got item off queue\n");
     runnerItem *ret = firstRunnerItem;
     firstRunnerItem = ret->next;
     return ret;
+}
+
+void runner_gated_incoming_bytes( int gate, int bytes, char *buf ) {
+    fprintf(stderr,"\nTrying to send %i bytes into runner\n", bytes );
+    
+    for( int i=0;i<4;i++ ) {
+        int sent_bytes = nn_send( gate, buf, bytes, 0 ); 
+        if( sent_bytes == -1 ) {
+            int err = errno;
+            char *errStr = decode_err( err );
+            printf( "\n  failed to send: %s\n",errStr);
+            free( errStr );
+        }
+        else {
+            printf("  success\n");
+            break;
+        }
+    }
 }
 
 void runner_queue_incoming_bytes( int bytes, char *buf ) {
@@ -177,13 +197,19 @@ void runner_handle_item( xjr_node *item, char *itemIdStr ) {
     char *result = NULL;
     if     ( !strncmp( type, "cmd", 3 ) ) { result = item_cmd( item, itemIdStr ); }
     //else if( !strncmp( type, ...      ) ) { result = item_...( item, itemIdStr ); }
+    else {
+        fprintf(stderr,"Running received command of type %s", typez );
+    }
     
     if( result ) {
         // TODO: queue the result for sending back to the director
         // we cannot directly enqueue result; we need to send it via nanomsg to the returner thread
-        //returner_queue_result( result );
+        int resLen = strlen( result );
+        printf("\nitem cmd returned %i bytes\n", resLen );
         
-        //free( result );
+        returner_gated_incoming_bytes( runner_gate_to_returner, resLen, result );
+        
+        free( result );
     }
     
     free( typez );

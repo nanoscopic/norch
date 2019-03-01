@@ -8,5 +8,6 @@ struct output_s {
     int socket_id;
 };
 void output__delete( output *self );
-output *setup_output( xjr_node *item, int nntype );
+output *setup_output( xjr_node *item, int nntype, int send_timeout, int recv_timeout );
+output *output__new();
 #endif

@@ -15,4 +15,6 @@ void returner_queue_result( char *result );
 void join_returner();
 void spawn_returner( volatile int *running );
 void returner_setup_output( xjr_node *configRoot );
+void returner_gated_incoming_bytes( int gate, int bytes, char *buf );
+int returner_open_gate();
 #endif

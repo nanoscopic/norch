@@ -59,12 +59,25 @@ char *request( output *dest, char *data, int dataLen, int *respSize ) {
 
 void setup_outputs( xjr_node *outputs ) {
     xjr_node *broadcast_node = xjr_node__get( configRoot, "broadcast"        , 9  );
+    if( !broadcast_node ) {
+        fprintf(stderr,"config has no broadcast node\n");
+        exit(1);
+    }
     xjr_node *requests_node  = xjr_node__get( configRoot, "director_requests", 17 );
+    if( !requests_node ) {
+        fprintf(stderr,"config has no director_requests node\n");
+        exit(1);
+    }
     
-    broadcast = setup_output( broadcast_node, NN_SUB  );
-    requests  = setup_output( requests_node , NN_REQ  );
+    broadcast = setup_output( broadcast_node, NN_SUB, 200, 1000 );
+    requests  = setup_output( requests_node , NN_REQ, 200, 1000 );
     
-    returner_setup_output( configRoot );
+    /*xjr_node *results_node  = xjr_node__get( configRoot, "director_results", 16 );
+    if( !results_node ) {
+        fprintf(stderr,"config has no director_results node\n");
+        exit(1);
+    }*/
+    //returner_setup_output( configRoot );
 }
 
 void cleanup_outputs() {
@@ -92,7 +105,7 @@ int setup_input() {
 int config() {
     char *configFile = "config.xjr";
     char *buffer;
-    
+    xjr_node__disable_mempool();
     configRoot = parse_file( (xjr_mempool *) 0, configFile, &buffer );
     if( !configRoot ) {
         fprintf( stderr, "Could not open config file %s\n", configFile );
@@ -115,6 +128,8 @@ int config() {
     if( res ) return res;
     setup_outputs( configRoot );
     
+    // TODO free config root
+    
     return 0;
 }
 
@@ -123,32 +138,39 @@ void intHandler(int dummy) {
 }
 
 void incoming_loop() {
+    int gate_to_runner = runner_open_gate();
+    if( gate_to_runner < 0 ) {
+        fprintf(stderr,"\nCould not connect to runner\n");
+        exit(1);
+    }
     while( running ) {
         void *buf = NULL;
         int bytes = nn_recv(socket_in, &buf, NN_MSG, 0);
         if( bytes < 0 ) {
-           int err = errno;
-           if( err == ETIMEDOUT ) {
-               printf(".");
-               fflush(stdout);
-               continue;
-           }
-           if( err == EINTR ) {
-               printf("Got ctrl-c in main thread\n");
-               running = 0;
-               break;
-           }
-           char *errStr = decode_err( err );
-           printf( "failed to receive: %s\n",errStr);
-           free( errStr );
-           continue;
+            int err = errno;
+            if( err == ETIMEDOUT ) {
+                printf(".");
+                fflush(stdout);
+                continue;
+            }
+            if( err == EINTR ) {
+                printf("Got ctrl-c in main thread\n");
+                running = 0;
+                break;
+            }
+            char *errStr = decode_err( err );
+            printf( "failed to receive: %s\n",errStr);
+            free( errStr );
+            continue;
         }
         
-        printf("Incoming Bytes: %i, Buffer:%s\n\n", bytes, (char *) buf );
+        printf("\nIncoming Bytes: %i, Buffer:%s\n\n", bytes, (char *) buf );
         
         // TODO properly send message to runner; cannot directly enqueue
+        runner_gated_incoming_bytes( gate_to_runner, bytes, buf );
         //runner_queue_incoming_bytes( bytes, buf );
     }
+    // TODO close runner gate
 }
 
 int main( const int argc, const char **argv ) {

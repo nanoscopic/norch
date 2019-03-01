@@ -4,18 +4,20 @@ use warnings;
 use NanoMsg::Raw;
 use lib '..';
 use part::misc;
+use Time::HiRes qw/gettimeofday tv_interval/;
 
 sub handle_results_item {
     my ( $buffer, $size ) = @_;
+    print "Received result: '$buffer'\n";
     my $root = Parse::XJR->new( text => $buffer );
     my $req = $root->firstChild();
     my $type = $req->name();
     if( $type eq 'result' ) {
         # Example result message:
-        # <req type='result' itemId='123' errorCode='0'>
+        # <result itemId='123' errorCode='0'>
         #   <stdout>...</stdout>
         #   <stderr>...</stderr>
-        # </req>
+        # </result>
         
         # TODO
         
@@ -43,11 +45,11 @@ sub dolisten {
         $err = part::misc::decode_err( $err );
         die "fail to connect: $err";
     }
-    nn_setsockopt( $socket_in, NN_SOL_SOCKET, NN_RCVTIMEO, 2000 ); # timeout receive in 200ms
+    nn_setsockopt( $socket_in, NN_SOL_SOCKET, NN_RCVTIMEO, 500 ); # timeout receive in 200ms
     
     local $| = 1; # autoflush so we can see the dots
     while( 1 ) {
-        my $bytes = nn_recv( $socket_in, my $buf, 5000, 0 );
+        my $bytes = nn_recv( $socket_in, my $buf, 20000, 0 );
         if( !$bytes ) {
             my $err = nn_errno();
             if( $err == ETIMEDOUT ) {
