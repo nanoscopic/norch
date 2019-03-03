@@ -1,0 +1,73 @@
+To create a working development environment, with a dynamically linked agent:
+
+zypper in colm-devel ragel nanomsg-devel
+
+// Install libxjr ( needed by the agent and by perl-Parse-XJR )
+git clone https://github.com/nanoscopic/libxjr.git
+cd libxjr
+vim Makefile.am ( drop -static from libxjr_la_LDFLAGS line )
+autoreconf
+automake --add-mising
+libtoolize
+autoreconf
+./configure --prefix=/usr
+touch autogen.sh
+make
+make install
+cd ..
+
+// Install Perl Parse::XJR module
+git clone https://github.com/nanoscopic/perl-Parse-XJR.git
+cd perl-Parse-XJR
+./Makefile.PL
+make
+make install
+
+// Install Perl NanoMsg::Raw module
+cpan install NanoMsg::Raw
+// Note that perl-NanoMsg-Raw is available on build.opensuse.org, but the spec file is currently missing the
+// dependency on nanomsg-devel, so it does not build. It can be forked and modified within the build system to
+// get an RPM that can be installed if you do not wish to install from CPAN
+
+----------------------
+
+To build a statically linked agent:
+
+// Install musl-libc
+wget https://www.musl-libc.org/releases/musl-1.1.21.tar.gz
+tar -xf musl-1.1.21.tar.gz
+cd musl-1.1.21
+./configure --disable-shared --static ( prefix defaults to /usr/local/musl )
+make
+make install
+
+// Install libxjr to musl
+git clone https://github.com/nanoscopic/libxjr.git
+cd libxjr
+autoreconf
+automake --add-mising
+libtoolize
+autoreconf
+./configure --prefix=/usr/local/musl
+touch autogen.sh
+make
+make install
+cd ..
+
+// Install nanomsg to musl statically
+zypper in cmake
+wget https://github.com/nanomsg/nanomsg/archive/1.1.5.tar.gz
+mv 1.1.5.tar.gz nanomsg-1.1.5.tar.gz
+tar -xf nanomsg-1.1.5.tar.gz
+export CC=/usr/local/musl/bin/musl-gcc
+cmake -DNN_STATIC_LIB=ON -DNN_HAVE_BACKTRACE=NO -DNN_ENABLE_GETADDRINFO_A=OFF -DNN_HAVE_MSG_CONTROL=YES
+./configure --prefix=/usr/local/musl
+make
+make install
+
+// Tweak Makefile for agent
+cd agent
+vim Makefile ( uncomment lines for static build; comment lines for dynamic build )
+make
+
+
