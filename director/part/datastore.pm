@@ -41,6 +41,12 @@ sub raw_request {
     }
     print "Sent $sentBytes bytes\n";
     my $bytes = nn_recv( $socket, my $reply, 5000, 0 );
+    if( $bytes == -1 ) {
+        my $err = nn_errno();
+        $err = part::misc::decode_err( $err );
+        die "failed to recv: $err";
+    }
+    print "Raw request to datastore got back $bytes bytes\n";
     return $reply;
 }
 
@@ -71,6 +77,7 @@ sub doconnect {
 
 my %agents;
 my @items;
+my %itemHash;
 
 sub handle_datastore_item {
     my ( $buffer, $size ) = @_;
@@ -85,9 +92,11 @@ sub handle_datastore_item {
         print "Raw item: '$raw_item'\n";
         my $root2 = Parse::XJR->new( text => $raw_item );
         my $item = $root2->firstChild();
-        #$item->dump( 20 );
+        $item->dump( 20 );
         my $itemId = $curItemId++;
         $item->{id} = $itemId;
+        $itemHash{ $itemId } = $item;
+        #$item->dump( 20 );
         push( @items, [ $raw_item, $item ] );
         print "  Returning $itemId\n";
         return $itemId;

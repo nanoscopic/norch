@@ -22,6 +22,12 @@ sub new_item {
     raw_request( $context, $request );
 }
 
+sub item_finished {
+    my ( $context, $itemId ) = @_;
+    my $request = "<item_finished itemId='$itemId'/>";
+    raw_request( $context, $request );
+}
+
 sub raw_request {
     my ( $context, $request ) = @_;
     
@@ -76,6 +82,11 @@ sub handle_scheduler_item {
         my $item = $root2->firstChild();
         push( @items, [ $root2, $raw_item, $item, $itemId ] );
     }
+    elsif( $type eq 'item_finished' ) {
+        my $itemId = $req->{itemId}->value();
+        
+        # Find items that depend on this one and start them
+    }
     return 'none';
 }
 
@@ -121,6 +132,9 @@ sub agent_name_to_socket {
 
 sub send_items {
     print "Attempting to send items\n";
+    
+    # Find the index of the first "ready item"
+    
     while( my $itemParts = shift @items ) {
         print "ITEM\n";
         my $root = $itemParts->[0];

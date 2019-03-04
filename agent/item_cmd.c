@@ -144,12 +144,18 @@ char *item_cmd( xjr_node *item, char *itemIdStr ) {
         // Use the 'results' socket to send it back
         // Include the itemId in the result message so that it can be correlated
         
-        char msg[8000];
-        snprintf( msg, 8000, 
-            "<result itemId='%i' errorCode='%i'>"
-            "<stdout bytes='%i'><![CDATA[%.*s]]></stdout>"
-            "<stderr bytes='%i'><![CDATA[%.*s]]></stderr>"
-            "</result>",
+        int len = 20 + 26 + 44 + 44 + 21 // Size of template ( see below )
+                  + outPos // size of stdout
+                  + errPos // size of stderr
+                  + 20 // some extra to handle integer expansion
+                  ;
+        char *msg = malloc(  );
+        snprintf( msg, len, 
+            "<result itemId='%i'>" // 20
+            "<localvars errorCode='%i'>" // 26
+            "<stdout bytes='%i'><![CDATA[%.*s]]></stdout>" // 44
+            "<stderr bytes='%i'><![CDATA[%.*s]]></stderr>" // 44
+            "</localvars></result>", // 21
             itemId, resCode,
             outPos,
             outPos,
@@ -168,7 +174,7 @@ char *item_cmd( xjr_node *item, char *itemIdStr ) {
         }
         free( args );
         
-        return strdup( msg );
+        return msg;
     }
     
     item_cmd_cleanup:

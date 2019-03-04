@@ -6,20 +6,57 @@ use lib '..';
 use part::misc;
 use Time::HiRes qw/gettimeofday tv_interval/;
 
+my $resultsContext = { name => 'results' };
+
 sub handle_results_item {
     my ( $buffer, $size ) = @_;
     print "Received result: '$buffer'\n";
     my $root = Parse::XJR->new( text => $buffer );
     my $req = $root->firstChild();
     my $type = $req->name();
+    my $itemId = $req->{itemId}->value();
     if( $type eq 'result' ) {
         # Example result message:
-        # <result itemId='123' errorCode='0'>
-        #   <stdout>...</stdout>
-        #   <stderr>...</stderr>
+        # <result itemId='123'>
+        #   <localvars errorCode='0'>
+        #     <stdout>...</stdout>
+        #     <stderr>...</stderr>
+        #   </localvars>
+        #   <globalvars>
+        #     <myglobal>1</myglobal>
+        #   </globalvars>
         # </result>
         
-        # TODO
+        my $result = $req; # to make it less confusing
+        
+        # Forward on to the datastore; to store the results of the item
+        part::datastore::raw_request( $resultsContext, $buffer );
+        
+        # Inform the scheduler that the item is finished
+        #   so that following tasks can be triggered
+        part::scheduler::item_finished( $itemId );
+        
+        #my $localvars = $result->{localvars};
+        #my $localVarXJR = $localvars->outerxjr();
+        #my $dsreq = "<item_results itemId=$itemId>$localVarXJR</item_results>";
+        #part::datastore::raw_request( $resultsContext, $dsreq );
+        
+        # Store local variables that were output
+        #my $curVarNode = $localvars->firstChild();
+        #while( $curVarNode ) {
+        #    my $curVar = $curVarNode->name();
+        #    
+        #    $curVarNode = $curVarNode->next();
+        #}
+        
+        # Store global variables that were output
+        #my $globalvars = $result->{globalvars};
+        #$curVarNode = $globalvars->firstChild();
+        #while( $curVarNode ) {
+        #    my $curVar = $curVarNode->name();
+        #    
+        #    $curVarNode = $curVarNode->next();
+        #}
         
         # Store the results here ( note we don't store in the 'datastore' )
         # Notify the datastore though that the item is 'done'

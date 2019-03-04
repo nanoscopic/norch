@@ -89,6 +89,7 @@ sub handle_item {
         # Forward the command to the datastore to track results
         my $item_id = part::datastore::new_item( $reqrepContext, $rawItem );
         
+        print "New new id: $item_id\n";
         # Forward the command to the scheduler
         part::scheduler::new_item( $reqrepContext, $rawItem, $item_id );
     }

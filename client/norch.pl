@@ -42,9 +42,49 @@ sub handle_item {
         nn_recv( $socket, $buffer, 1000, 0 );
         return $buffer;
     }
+    elsif( $type eq 'inorder' ) {
+        # assign random names to each item
+        # and make them dependent one after another
+        # then run handle_item on each
+        
+        my $du = Data::UUID->new;
+        my $curChild = $item->firstChild();
+        my $prevName;
+        while( $curChild ) {
+            if( !$curChild->isatt() ) { # Ignore attributes of the inorder tag itself
+                if( $prevName ) {
+                    # The items themselves could already have dependencies
+                    # TODO: tack on to existing dependencies
+                    $curChild->{dep} = $prevName;
+                }
+                $prevName = $curChild->{name} = $du->create();
+            }
+            
+            $curChild = $curChild->next();
+        }
+        my $lastChild = $curChild; # for sanity
+        if( $item->{name} ) { # Let a while set of things done in order in turn trigger other items
+            my $setName = $item->{name};
+            $lastChild->{name} = $setName;
+        }
+        
+        return handle_items( $socket, $item );
+    }
     else {
         return "Unknown request type $type";
     }
+}
+
+sub handle_items {
+    my ( $socket, $root ) = @_;
+    
+    my $results = '';
+    my $curChild = $root->firstChild();
+    while( $curChild ) {
+        $results .= handle_item( $socket, $curChild ) . "\n";
+        $curChild = $curChild->next();
+    }
+    return $results;
 }
 
 sub handle_cmdline {
@@ -52,14 +92,9 @@ sub handle_cmdline {
     
     if( $req eq 'xjr' ) {
         my $xjrFile = $ARGV[1];
-        my $results = '';
+        
         my $root = Parse::XJR->new( file => $xjrFile );
-        my $curChild = $root->firstChild();
-        while( $curChild ) {
-            $results .= handle_item( $socket, $curChild ) . "\n";
-            $curChild = $curChild->next();
-        }
-        return $results;
+        return handle_items( $socket, $root );
     }
     
     my $msg;
