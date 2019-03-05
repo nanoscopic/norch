@@ -149,7 +149,7 @@ char *item_cmd( xjr_node *item, char *itemIdStr ) {
                   + errPos // size of stderr
                   + 20 // some extra to handle integer expansion
                   ;
-        char *msg = malloc(  );
+        char *msg = malloc( len );
         snprintf( msg, len, 
             "<result itemId='%i'>" // 20
             "<localvars errorCode='%i'>" // 26

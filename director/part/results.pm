@@ -34,7 +34,7 @@ sub handle_results_item {
         
         # Inform the scheduler that the item is finished
         #   so that following tasks can be triggered
-        part::scheduler::item_finished( $itemId );
+        part::scheduler::item_finished( $resultsContext, $itemId );
         
         #my $localvars = $result->{localvars};
         #my $localVarXJR = $localvars->outerxjr();

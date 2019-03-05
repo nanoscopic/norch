@@ -83,7 +83,7 @@ sub handle_item {
     my $type = $item->name();
     my $rawItem = "<$type>" . $item->xjr() . "</$type>";
         
-    if( $type eq 'cmd' ) {
+    if( $type eq 'cmd' || $type eq 'output' ) {
         print "Reqrep - Cmd incoming\n";
         
         # Forward the command to the datastore to track results

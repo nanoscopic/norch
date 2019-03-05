@@ -9,6 +9,9 @@ use Time::HiRes qw/gettimeofday tv_interval/;
 #my $socket_address = "inproc://scheduler";
 my $socket_address = "tcp://127.0.0.1:8301";
 my @items;
+my %itemsById;
+my %done_ids; # ids of items that are done 
+my %waiting; # items waiting on others to be done; stored by the name they are waiting on
 my $schedulerContext = { name => 'scheduler' };
 
 sub dofork {
@@ -80,11 +83,49 @@ sub handle_scheduler_item {
         my $itemId = $req->{itemId}->value();
         my $root2 = Parse::XJR->new( text => $raw_item );
         my $item = $root2->firstChild();
-        push( @items, [ $root2, $raw_item, $item, $itemId ] );
+        my $itemName = '';
+        if( $item->{name} ) {
+            $itemName = $item->{name}->value();
+        }
+        my $dep = $item->{dep} ? $item->{dep}->value() : '';
+        my $ready = 0;
+        
+        my $item = {
+            root => $root2,
+            raw => $raw_item,
+            item => $item,
+            id => $itemId,
+            ready => $ready,
+            name => $itemName
+        };
+        
+        if( $dep ) {
+            print "Setting item to wait on dep $dep\n";
+            $waiting{ $dep } = $item;
+        }
+        else {
+            $item->{ready} = 1;
+        }
+        
+        $itemsById{ $itemId } = $item;
+        push( @items, $item );
     }
     elsif( $type eq 'item_finished' ) {
         my $itemId = $req->{itemId}->value();
-        
+        my $ob = $itemsById{ $itemId };
+        $done_ids{ $itemId } = 1;
+        my $itemName = $ob->{name};
+        print "Name of item that finished: $itemName\n";
+        #use Data::Dumper;
+        #print Dumper( \%waiting );
+        my $waitingOb = $waiting{ $itemName };
+        if( $waitingOb ) {
+            print "Found a waiting item; marking it ready\n";
+            my $item = $waitingOb->{item};
+            print $item->outerxjr();
+            #$item->dump(20);
+            $waitingOb->{ready} = 1;
+        }
         # Find items that depend on this one and start them
     }
     return 'none';
@@ -130,26 +171,48 @@ sub agent_name_to_socket {
     return $dest_socket;
 }
 
+sub send_item {
+    my $ob = shift;
+    print "ITEM\n";
+    my $root = $ob->{root};
+    my $raw_item = $ob->{raw};
+    my $item = $ob->{item};
+    
+    my $itemType = $item->name();
+    if( $itemType eq 'output' ) {
+        my $nodeValue = $item->{tpl}->value();
+        print "Output: $nodeValue\n";
+        return;
+    }
+    
+    my $itemId = $ob->{id};
+    #$item->dump(20);
+    my $agent = $item->{agent}->value();
+    
+    # determine the socket to send to the item
+    my $socket = agent_name_to_socket( $agent );
+    
+    my $toSend = "$raw_item<extra itemId='$itemId'/>";
+    print "Sending '$toSend' to agent $agent\n";
+    nn_send( $socket, $toSend );
+}
+
 sub send_items {
     print "Attempting to send items\n";
     
     # Find the index of the first "ready item"
-    
-    while( my $itemParts = shift @items ) {
-        print "ITEM\n";
-        my $root = $itemParts->[0];
-        my $raw_item = $itemParts->[1];
-        my $item = $itemParts->[2];
-        my $itemId = $itemParts->[3];
-        $item->dump(20);
-        my $agent = $item->{agent}->value();
-        
-        # determine the socket to send to the item
-        my $socket = agent_name_to_socket( $agent );
-        
-        my $toSend = "$raw_item<extra itemId='$itemId'/>";
-        print "Sending '$toSend' to agent $agent\n";
-        nn_send( $socket, $toSend );
+    while( 1 ) {
+        my $acted = 0;
+        for( my $i=0;$i<scalar(@items);$i++ ) {
+            my $ob = $items[ $i ];
+            if( $ob->{'ready'} ) {
+                send_item( $ob );
+                $acted = 1;
+                splice @items, $i, 1;
+                last;
+            }
+        }
+        last if( !$acted );
     }
     
     print "Done sending items\n";

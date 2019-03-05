@@ -2,6 +2,7 @@
 use strict;
 use NanoMsg::Raw;
 use Parse::XJR;
+use Data::UUID;
 
 my $socket_out = connect_director();
 my $out = $ARGV[0];
@@ -32,14 +33,19 @@ sub handle_item {
     my %passThruTypes = (
         add_agent => 1,
         list_agents => 1,
-        cmd => 1
+        cmd => 1,
+        output => 1
     );
     
+    print "----------------------------------\nClient item type $type\n";
+    my $rawItem = $item->outerxjr();
+    print $rawItem . "\n";
+    
+    
     if( $passThruTypes{ $type } ) {
-        my $xjr = "<$type>" . $item->xjr() . "</$type>";
-        nn_send( $socket, $xjr, 0 );
+        nn_send( $socket, $rawItem, 0 );
         my $buffer;
-        nn_recv( $socket, $buffer, 1000, 0 );
+        nn_recv( $socket, $buffer, 100, 0 );
         return $buffer;
     }
     elsif( $type eq 'inorder' ) {
@@ -50,6 +56,7 @@ sub handle_item {
         my $du = Data::UUID->new;
         my $curChild = $item->firstChild();
         my $prevName;
+        
         while( $curChild ) {
             if( !$curChild->isatt() ) { # Ignore attributes of the inorder tag itself
                 if( $prevName ) {
@@ -57,11 +64,14 @@ sub handle_item {
                     # TODO: tack on to existing dependencies
                     $curChild->{dep} = $prevName;
                 }
-                $prevName = $curChild->{name} = $du->create();
+                $du = Data::UUID->new;
+                my $newName = $du->create_str();
+                $curChild->{name} = $newName;
+                $prevName = $newName;
             }
-            
             $curChild = $curChild->next();
         }
+
         my $lastChild = $curChild; # for sanity
         if( $item->{name} ) { # Let a while set of things done in order in turn trigger other items
             my $setName = $item->{name};
@@ -79,6 +89,7 @@ sub handle_items {
     my ( $socket, $root ) = @_;
     
     my $results = '';
+    my @subs;
     my $curChild = $root->firstChild();
     while( $curChild ) {
         $results .= handle_item( $socket, $curChild ) . "\n";
