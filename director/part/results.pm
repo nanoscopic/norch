@@ -30,44 +30,11 @@ sub handle_results_item {
         my $result = $req; # to make it less confusing
         
         # Forward on to the datastore; to store the results of the item
+        # This just stores it internally to be processed by the datastore thread then returns immediately
         part::datastore::raw_request( $resultsContext, $buffer );
         
-        # Inform the scheduler that the item is finished
-        #   so that following tasks can be triggered
-        part::scheduler::item_finished( $resultsContext, $itemId );
-        
-        #my $localvars = $result->{localvars};
-        #my $localVarXJR = $localvars->outerxjr();
-        #my $dsreq = "<item_results itemId=$itemId>$localVarXJR</item_results>";
-        #part::datastore::raw_request( $resultsContext, $dsreq );
-        
-        # Store local variables that were output
-        #my $curVarNode = $localvars->firstChild();
-        #while( $curVarNode ) {
-        #    my $curVar = $curVarNode->name();
-        #    
-        #    $curVarNode = $curVarNode->next();
-        #}
-        
-        # Store global variables that were output
-        #my $globalvars = $result->{globalvars};
-        #$curVarNode = $globalvars->firstChild();
-        #while( $curVarNode ) {
-        #    my $curVar = $curVarNode->name();
-        #    
-        #    $curVarNode = $curVarNode->next();
-        #}
-        
-        # Store the results here ( note we don't store in the 'datastore' )
-        # Notify the datastore though that the item is 'done'
-        # Notify the scheduler as well, so that follow up items can be done
-        
-        # It may be necessary to process the results to store the results into variables for
-        #   use by subsequent items. The result variables though should be stored into the
-        #   datastore, so perhaps the scheduler should be notified by the datastore once
-        #   it has actually stored the results. It would be bad if the scheduler was notified
-        #   and scheduled a following task before the variables needed by the following
-        #   task are stored in the datastore.
+        # The datastore will do the following itself once it has finished processing the results.
+        # part::scheduler::item_finished( $resultsContext, $itemId );
     }
 }
 

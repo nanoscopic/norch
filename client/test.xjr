@@ -6,5 +6,5 @@
         <cmd>/bin/ls</cmd>
         <arg>-l</arg>
     </cmd>
-    <output><tpl>stuff to output</tpl></output>
+    <output><tpl>stuff to output: *{+1}*</tpl></output>
 </inorder>

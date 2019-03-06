@@ -5,6 +5,7 @@ use NanoMsg::Raw;
 use lib '..';
 use part::misc;
 use Time::HiRes qw/gettimeofday tv_interval/;
+use Template::Nepl;
 
 #my $socket_address = "inproc://scheduler";
 my $socket_address = "tcp://127.0.0.1:8301";
@@ -13,6 +14,7 @@ my %itemsById;
 my %done_ids; # ids of items that are done 
 my %waiting; # items waiting on others to be done; stored by the name they are waiting on
 my $schedulerContext = { name => 'scheduler' };
+my $nepl = Template::Nepl->new( lang => 'perl', pkg => 'part::template' );
 
 sub dofork {
     my $pid = fork();
@@ -21,6 +23,7 @@ sub dofork {
 
 sub new_item {
     my ( $context, $item, $itemId ) = @_;
+    $item =~ s/]]>/\|\|>/g;
     my $request = "<new_item itemId='$itemId'><item><![CDATA[$item]]></item></new_item>";
     raw_request( $context, $request );
 }
@@ -70,6 +73,62 @@ sub doconnect {
     return $socket;
 }
 
+sub type_new_item {
+    my $req = shift;
+    my $raw_item = $req->{item}->value();
+    $raw_item =~ s/\|\|>/]]>/g;
+    my $itemId = $req->{itemId}->value();
+    print "scheduler.type_new_item - queueing itemId $itemId\n";
+    my $root2 = Parse::XJR->new( text => $raw_item );
+    my $item1 = $root2->firstChild();
+    my $itemName = '';
+    if( $item1->{name} ) {
+        $itemName = $item1->{name}->value();
+    }
+    my $dep = $item1->{dep} ? $item1->{dep}->value() : '';
+    my $ready = 0;
+    
+    my $item = {
+        root => $root2,
+        raw => $raw_item,
+        item => $item1,
+        id => $itemId,
+        ready => $ready,
+        name => $itemName
+    };
+    
+    if( $dep ) {
+        print "Setting item to wait on dep $dep\n";
+        $waiting{ $dep } = $item;
+    }
+    else {
+        $item->{ready} = 1;
+    }
+    
+    $itemsById{ $itemId } = $item;
+    push( @items, $item );
+}
+
+sub type_item_finished {
+    my $req = shift;
+    my $itemId = $req->{itemId}->value();
+    my $ob = $itemsById{ $itemId };
+    $done_ids{ $itemId } = 1;
+    my $itemName = $ob->{name};
+    print "Name of item that finished: $itemName\n";
+    #use Data::Dumper;
+    #print Dumper( \%waiting );
+    my $waitingOb = $waiting{ $itemName };
+    if( $waitingOb ) {
+        print "Found a waiting item; marking it ready\n";
+        my $item = $waitingOb->{item};
+        print $item->outerxjr();
+        #$item->dump(20);
+        $waitingOb->{ready} = 1;
+    }
+    # Find items that depend on this one and start them
+}
+
 sub handle_scheduler_item {
     my ( $buffer, $size ) = @_;
     print "Scheduler received '$buffer'\n";
@@ -78,56 +137,9 @@ sub handle_scheduler_item {
     my $type = $req->name();
     
     print "  type=$type\n";
-    if( $type eq 'new_item' ) {
-        my $raw_item = $req->{item}->value();
-        my $itemId = $req->{itemId}->value();
-        my $root2 = Parse::XJR->new( text => $raw_item );
-        my $item = $root2->firstChild();
-        my $itemName = '';
-        if( $item->{name} ) {
-            $itemName = $item->{name}->value();
-        }
-        my $dep = $item->{dep} ? $item->{dep}->value() : '';
-        my $ready = 0;
-        
-        my $item = {
-            root => $root2,
-            raw => $raw_item,
-            item => $item,
-            id => $itemId,
-            ready => $ready,
-            name => $itemName
-        };
-        
-        if( $dep ) {
-            print "Setting item to wait on dep $dep\n";
-            $waiting{ $dep } = $item;
-        }
-        else {
-            $item->{ready} = 1;
-        }
-        
-        $itemsById{ $itemId } = $item;
-        push( @items, $item );
-    }
-    elsif( $type eq 'item_finished' ) {
-        my $itemId = $req->{itemId}->value();
-        my $ob = $itemsById{ $itemId };
-        $done_ids{ $itemId } = 1;
-        my $itemName = $ob->{name};
-        print "Name of item that finished: $itemName\n";
-        #use Data::Dumper;
-        #print Dumper( \%waiting );
-        my $waitingOb = $waiting{ $itemName };
-        if( $waitingOb ) {
-            print "Found a waiting item; marking it ready\n";
-            my $item = $waitingOb->{item};
-            print $item->outerxjr();
-            #$item->dump(20);
-            $waitingOb->{ready} = 1;
-        }
-        # Find items that depend on this one and start them
-    }
+    if   ( $type eq 'new_item'      ) { type_new_item( $req ); }
+    elsif( $type eq 'item_finished' ) { type_item_finished( $req ); }
+    elsif( $type eq 'teval_done'    ) { type_teval_done( $req ); }
     return 'none';
 }
 
@@ -171,21 +183,65 @@ sub agent_name_to_socket {
     return $dest_socket;
 }
 
+# Template eval
+sub teval {
+    my ( $source, $itemId ) = @_;
+    
+    # Rather than porting variables and results between the scheduler and the datastore,
+    #   we just send the template over to the datastore and let it be executed there.
+    
+    # TODO: Instead of getting the evaluated template back from the datastore and sending
+    #   it to the agents then; just send it directly to the agents from the datastore;
+    #   that way it can all be done asynchronously.
+    return part::datastore::teval_with_vars( $schedulerContext, $source, $itemId );
+    
+    #my $tpl = $nepl->fetch_template( source => $tpl );
+    #return eval( $tpl->{'code'} );
+}
+
+sub type_teval_done {
+    my $item = shift;
+    my $rawItem = $item->{rawItem}->value();
+    $rawItem =~ s/\|\|>/]]>/g;
+    my $itemId = $item->{itemId}->value();
+    print "scheduler.type_teval_done - start itemId:$itemId\n";
+    my $root = Parse::XJR->new( text => $rawItem );
+    my $ob = {
+        root => $root,
+        raw => $rawItem,
+        item => $root->firstChild(),
+        id => $itemId
+    };
+    send_item( $ob );
+}
+
 sub send_item {
     my $ob = shift;
-    print "ITEM\n";
     my $root = $ob->{root};
     my $raw_item = $ob->{raw};
     my $item = $ob->{item};
+    my $itemId = $ob->{id};
+    print "scheduler.send_item - start itemId $itemId\n";
+    
+    # TODO: When the item is sent, look through its XJR representation and determine if it contains Template::Nepl
+    # expressions. If it does, evaluate those before sending so that it can utilize the results of previous items.
+    # This cannot be done for a 'foreach' loop, as it is not desired to run the expressions on each item until
+    # going through the loop.
+    if( $raw_item =~ m/\*\{/ ) {
+        teval( $raw_item, $itemId );
+        return;
+        #$raw_item = $ob->{raw} = teval( $raw_item );
+        #$item = $ob->{item} = Parse::XJR->new( text => $raw_item );
+    }
     
     my $itemType = $item->name();
+    print "scheduler.send_item - itemType $itemType\n";
     if( $itemType eq 'output' ) {
-        my $nodeValue = $item->{tpl}->value();
-        print "Output: $nodeValue\n";
+        my $tpl = $item->{tpl}->value();
+        print "Output: $tpl\n";
         return;
     }
     
-    my $itemId = $ob->{id};
     #$item->dump(20);
     my $agent = $item->{agent}->value();
     
@@ -193,12 +249,12 @@ sub send_item {
     my $socket = agent_name_to_socket( $agent );
     
     my $toSend = "$raw_item<extra itemId='$itemId'/>";
-    print "Sending '$toSend' to agent $agent\n";
+    print "scheduler.send_type - Sending '$toSend' to agent $agent\n";
     nn_send( $socket, $toSend );
 }
 
 sub send_items {
-    print "Attempting to send items\n";
+    #print "scheduler.send_items - start\n";
     
     # Find the index of the first "ready item"
     while( 1 ) {
@@ -215,7 +271,7 @@ sub send_items {
         last if( !$acted );
     }
     
-    print "Done sending items\n";
+    #print "scheduler.send_items - end\n";
 }
 
 sub dolisten {
