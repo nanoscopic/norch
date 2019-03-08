@@ -27,6 +27,8 @@ char *item_file( xjr_node *item, char *itemIdStr ) {
     int responseLen;
     char *msg;
     
+    long int curLen = 0;
+    
     if( accessRes == -1 ) {
         int err = errno;
         if( err == ENOENT ) { // The file does not exist, create it
@@ -61,7 +63,7 @@ char *item_file( xjr_node *item, char *itemIdStr ) {
     
     // Find length of file
     fseek( fh, 0, SEEK_END );
-    long int curLen = ftell( fh ); 
+    curLen = ftell( fh ); 
     fseek( fh, 0, SEEK_SET ); 
     
     // Read file into memory
