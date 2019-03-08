@@ -11,6 +11,7 @@
 #include"misc.h"
 #include"item_cmd.h"
 #include"item_file.h"
+#include"item_service.h"
 #include<string.h>
 #include"output.h"
 
@@ -197,16 +198,14 @@ void runner_handle_item( xjr_node *item, char *itemIdStr ) {
     typez[ typeLen ] = 0x00;
     
     char *result = NULL;
-    if     ( !strncmp( type, "cmd",  3 ) ) { result = item_cmd(  item, itemIdStr ); }
-    else if( !strncmp( type, "file", 4 ) ) { result = item_file( item, itemIdStr ); }
-    //else if( !strncmp( type, ...      ) ) { result = item_...( item, itemIdStr ); }
+    if     ( !strncmp( type, "cmd",     3 ) ) { result = item_cmd(     item, itemIdStr ); }
+    else if( !strncmp( type, "file",    4 ) ) { result = item_file(    item, itemIdStr ); }
+    else if( !strncmp( type, "service", 7 ) ) { result = item_service( item, itemIdStr ); }
     else {
         fprintf(stderr,"Running received command of type %s", typez );
     }
     
     if( result ) {
-        // TODO: queue the result for sending back to the director
-        // we cannot directly enqueue result; we need to send it via nanomsg to the returner thread
         int resLen = strlen( result );
         printf("\nitem cmd returned %i bytes\n", resLen );
         
