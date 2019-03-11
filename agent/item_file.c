@@ -127,9 +127,7 @@ done:
             "<localvars res='%s'>" // 20
             "</localvars></result>", // ~22
             itemId,
-            res,
-            curLen,
-            oldData );
+            res );
     }
         
     return msg;

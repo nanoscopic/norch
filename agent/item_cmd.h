@@ -2,5 +2,12 @@
 #define __ITEM_CMD_H
 #include<xjr-node.h>
 char *item_cmd( xjr_node *item, char *itemIdStr );
-int run_cmd( char **args, int argLen, long int *outLen, char **outp, long int *errLen, char **errp, long int *inLen, char *in, int *errLevel );
+typedef struct cmd_res_s {
+    long int outLen;
+    char *out;
+    long int errLen;
+    char *err;
+    int errorLevel;
+} cmd_res;
+cmd_res *run_cmd( char **args, int argLen, long int *inLen, char *in );
 #endif

@@ -248,7 +248,7 @@ static int parse_literal(state_t* state)
     if ( rc == '(' )
     {
         int capturing;
-        const char* input_start;
+        const char* input_start = 0x00;
         
         state->depth++;
     

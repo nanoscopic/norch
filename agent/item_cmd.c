@@ -6,15 +6,15 @@
 #include<string.h>
 #include <sys/wait.h>
 
-int run_cmd( char **args, int argLen, long int *outLen, char **outp, long int *errLen, char **errp, long int *inLen, char *in, int *errLevel ) {
+cmd_res *run_cmd( char **args, int argLen, long int *inLen, char *in ) {
     // Run the cmd, saving the stdout and stderr of it
     int stdout_pipe[2];
-    if( pipe( stdout_pipe ) == -1 ) return 1;
+    if( pipe( stdout_pipe ) == -1 ) return NULL;
     int stderr_pipe[2];
-    if( pipe( stderr_pipe ) == -1 ) return 1;
+    if( pipe( stderr_pipe ) == -1 ) return NULL;
     
     pid_t pid;
-    if( ( pid = fork() ) == -1 ) return 1;
+    if( ( pid = fork() ) == -1 ) return NULL;
     
     if(pid == 0) {
         dup2( stdout_pipe[1], STDOUT_FILENO ); close( stdout_pipe[0] ); close( stdout_pipe[1] );
@@ -93,12 +93,16 @@ int run_cmd( char **args, int argLen, long int *outLen, char **outp, long int *e
         if( out_bytes < 1 && err_bytes < 1 ) usleep( 10000 );
     }
     
-    *outLen = outPos;
-    *errLen = errPos;
-    *outp = out;
-    *errp = err;
-    *errLevel = resCode;
-    return 0;
+    cmd_res *res = calloc( sizeof( cmd_res ), 1 );
+    res->outLen = outPos;
+    res->errLen = errPos;
+    res->out = out;
+    res->err = err;
+    res->errorLevel = resCode;
+    return res;
+}
+
+void cmd_res__delete( cmd_res *self ) {
 }
 
 int xjr_to_args( xjr_arr *argArr, int *argCount, char ***argsOut ) {
@@ -133,10 +137,10 @@ void free_args( char **args, int argLen ) {
     free( args );
 }
 
-char *form_response( int itemId, long int outLen, char *out, long int errLen, char *err, int errLevel ) {
+char *form_response( int itemId, cmd_res *res ) {
     int len = 20 + 26 + 44 + 44 + 21 // Size of template ( see below )
-                  + outLen // size of stdout
-                  + errLen // size of stderr
+                  + res->outLen // size of stdout
+                  + res->errLen // size of stderr
                   + 20 // some extra to handle integer expansion
                   ;
     char *msg = malloc( len );
@@ -147,13 +151,13 @@ char *form_response( int itemId, long int outLen, char *out, long int errLen, ch
         "<stderr bytes='%li'><![CDATA[%.*s]]></stderr>" // 44
         "</localvars></result>", // 21
         itemId,
-        errLevel,
-        outLen,
-        (int) outLen,
-        out,
-        errLen,
-        (int) errLen,
-        err );
+        res->errorLevel,
+        res->outLen,
+        (int) res->outLen,
+        res->out,
+        res->errLen,
+        (int) res->errLen,
+        res->err );
     return msg;
 }
 
@@ -179,15 +183,11 @@ char *item_cmd( xjr_node *item, char *itemIdStr ) {
     }
     args[ 0 ] = cmd;
     
-    char *out;
-    long int outLen;
-    char *err;
-    long int errLen;
     char *in = NULL;
-    int errLevel;
-    int runRes = run_cmd( args, argCount, &outLen, &out, &errLen, &err, 0, in, &errLevel );
+    cmd_res *runRes = run_cmd( args, argCount, 0, in );
     if( !runRes ) {
-        char *msg = form_response( itemId, outLen, out, errLen, err, errLevel );
+        char *msg = form_response( itemId, runRes );
+        cmd_res__delete( runRes );
         printf( msg );
         free_args( args, argCount );
         return msg;

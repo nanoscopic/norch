@@ -5,7 +5,7 @@
 
 int main( int argc, char *argv[] ) {
     xjr_node__disable_mempool();
-    char *testItemSrc = "<service unit='test' action='start'/>";
+    char *testItemSrc = "<service unit='firewalld' action='status'/>";
     xjr_node *root = parse( 0, testItemSrc, strlen( testItemSrc ) );
     xjr_node__dump( root, 20 );
     char *id = "10";
